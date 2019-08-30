@@ -324,18 +324,22 @@ export default class BlockchainHandler {
       // ensure all references to locks are normalized
       update.to = normalizeLockAddress(update.to)
     }
-    this._mergeUpdate(
-      hash,
-      'transactions',
-      {
-        hash,
-        blockNumber: Number.MAX_SAFE_INTEGER,
-        status: 'submitted',
-      },
-      update
-    )
+
+    this._mergeUpdate(hash, 'transactions', {}, update)
     const transaction = this.store.transactions[hash]
+    // Submitted transaction are the ones which are not known by the web3 node to which we
+    // asked. So either they are very recent (and have not propagated to all mempools), or
+    // they are old and have been dropped from all mempools.
+    if (
+      transaction.status === TransactionStatus.SUBMITTED &&
+      transaction.createdAt &&
+      transaction.createdAt.getTime() < Date.now() - 60 * 60 * 1000
+    ) {
+      transaction.status = TransactionStatus.STALE
+    }
+
     const isMined = transaction.status === TransactionStatus.MINED
+    const isStale = transaction.status === TransactionStatus.STALE
     const recipient = transaction.lock || transaction.to
     const isKeyPurchase = transaction.type === TransactionType.KEY_PURCHASE
     const accountAddress = this.store.account as string
@@ -348,7 +352,7 @@ export default class BlockchainHandler {
 
     // If we receive a submitted or pending key purchase we should
     // create and store a temporary key.
-    if (isKeyPurchase && recipient && !isMined) {
+    if (isKeyPurchase && recipient && !isMined && !isStale) {
       const lock = this.store.locks[recipient]
       const temporaryKey = createTemporaryKey(recipient, accountAddress, lock)
       this.store.keys[recipient] = temporaryKey
@@ -463,7 +467,10 @@ export default class BlockchainHandler {
       // TODO: which purchase failed? unlock-js needs to provide this information
       // for now, we will kill all submitted transactions and re-fetch
       this.store.transactions = Object.keys(this.store.transactions)
-        .filter(hash => this.store.transactions[hash].status !== 'submitted')
+        .filter(
+          hash =>
+            this.store.transactions[hash].status !== TransactionStatus.SUBMITTED
+        )
         .reduce(
           (allTransactions: Transactions, hash) => ({
             ...allTransactions,
@@ -522,6 +529,7 @@ export default class BlockchainHandler {
     if (result.transactions) {
       result.transactions
         .map(t => ({
+          createdAt: new Date(t.createdAt),
           hash: t.transactionHash,
           network: t.chain,
           to: t.recipient,
@@ -534,6 +542,16 @@ export default class BlockchainHandler {
           // we pass the transaction as defaults if it has input set, so that we can
           // parse out the transaction type and other details. If input is not set,
           // we can't safely pass the transaction default
+          this._mergeUpdate(
+            transaction.hash,
+            'transactions',
+            {
+              hash: transaction.hash,
+              blockNumber: Number.MAX_SAFE_INTEGER,
+              status: TransactionStatus.SUBMITTED, // This will be updated from web3Service
+            },
+            transaction
+          )
           this.web3Service
             .getTransaction(
               transaction.hash,

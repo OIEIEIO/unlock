@@ -305,6 +305,7 @@ describe('BlockchainHandler - retrieveCurrentBlockchainData', () => {
           {
             transactions: [
               {
+                createdAt: '2019-08-23T17:42:24.476Z',
                 transactionHash: 'hash',
                 chain: constants.defaultNetwork,
                 recipient: addresses[1], // locksmith returns checksummed addresses

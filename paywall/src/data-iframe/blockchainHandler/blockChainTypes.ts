@@ -76,6 +76,7 @@ export interface BlockchainData {
 }
 
 export interface LocksmithTransactionsResult {
+  createdAt: string
   transactionHash: string
   chain: unlockNetworks
   recipient: string

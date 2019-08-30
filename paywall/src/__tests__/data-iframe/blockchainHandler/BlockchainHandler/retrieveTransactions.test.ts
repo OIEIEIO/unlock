@@ -105,6 +105,7 @@ describe('BlockchainHandler - retrieveTransactions', () => {
       } = {
         transactions: [
           {
+            createdAt: '2019-08-23T17:42:24.476Z',
             transactionHash: 'hash1',
             chain: 1984,
             recipient: addresses[0],
@@ -113,6 +114,7 @@ describe('BlockchainHandler - retrieveTransactions', () => {
             for: addresses[2],
           },
           {
+            createdAt: '2019-08-23T16:42:24.476Z',
             transactionHash: 'hash2',
             chain: 1984,
             recipient: addresses[1],
