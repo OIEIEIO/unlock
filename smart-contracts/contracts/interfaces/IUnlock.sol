@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.14;
 
 
 /**
@@ -16,8 +16,14 @@ interface IUnlock {
   );
 
   event ConfigUnlock(
+    address publicLockAddress,
     string globalTokenSymbol,
     string globalTokenURI
+  );
+
+  event ResetTrackedValue(
+    uint grossNetworkProduct,
+    uint totalDiscountGranted
   );
 
   // Use initialize instead of a constructor to support proxies (for upgradeability via zos).
@@ -27,13 +33,17 @@ interface IUnlock {
   * @dev Create lock
   * This deploys a lock for a creator. It also keeps track of the deployed lock.
   * @param _tokenAddress set to the ERC20 token address, or 0 for ETH.
+  * @param _salt an identifier for the Lock, which is unique for the user.
+  * This may be implemented as a sequence ID or with RNG. It's used with `create2`
+  * to know the lock's address before the transaction is mined.
   */
   function createLock(
     uint _expirationDuration,
     address _tokenAddress,
     uint _keyPrice,
     uint _maxNumberOfKeys,
-    string calldata _lockName
+    string calldata _lockName,
+    bytes12 _salt
   ) external;
 
     /**
@@ -76,13 +86,13 @@ interface IUnlock {
     returns (uint discount, uint tokens);
 
   // Function to read the globalTokenURI field.
-  function getGlobalBaseTokenURI()
+  function globalBaseTokenURI()
     external
     view
     returns (string memory);
 
   // Function to read the globalTokenSymbol field.
-  function getGlobalTokenSymbol()
+  function globalTokenSymbol()
     external
     view
     returns (string memory);
@@ -91,8 +101,15 @@ interface IUnlock {
    *  Should throw if called by other than owner.
    */
   function configUnlock(
+    address _publicLockAddress,
     string calldata _symbol,
     string calldata _URI
   )
     external;
+
+  // Allows the owner to change the value tracking variables as needed.
+  function resetTrackedValue(
+    uint _grossNetworkProduct,
+    uint _totalDiscountGranted
+  ) external;
 }

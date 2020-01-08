@@ -1,6 +1,7 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.14;
 
-import 'openzeppelin-eth/contracts/ownership/Ownable.sol';
+import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC721/IERC721Enumerable.sol';
+import '@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol';
 import './MixinDisableAndDestroy.sol';
 import '../interfaces/IUnlock.sol';
 import './MixinFunds.sol';
@@ -13,6 +14,7 @@ import './MixinFunds.sol';
  * separates logically groupings of code to ease readability.
  */
 contract MixinLockCore is
+  IERC721Enumerable,
   Ownable,
   MixinFunds,
   MixinDisableAndDestroy
@@ -46,14 +48,17 @@ contract MixinLockCore is
   uint public maxNumberOfKeys;
 
   // A count of how many new key purchases there have been
-  uint public totalSupply;
+  uint internal _totalSupply;
 
   // The account which will receive funds on withdrawal
   address public beneficiary;
 
+  // The denominator component for values specified in basis points.
+  uint public constant BASIS_POINTS_DEN = 10000;
+
   // Ensure that the Lock has not sold all of its keys.
   modifier notSoldOut() {
-    require(maxNumberOfKeys > totalSupply, 'LOCK_SOLD_OUT');
+    require(maxNumberOfKeys > _totalSupply, 'LOCK_SOLD_OUT');
     _;
   }
 
@@ -66,7 +71,7 @@ contract MixinLockCore is
     _;
   }
 
-  constructor(
+  function _initializeMixinLockCore(
     address _beneficiary,
     uint _expirationDuration,
     uint _keyPrice,
@@ -81,6 +86,14 @@ contract MixinLockCore is
     maxNumberOfKeys = _maxNumberOfKeys;
   }
 
+  // The version number of the current implementation on this network
+  function publicLockVersion(
+  ) public pure
+    returns (uint)
+  {
+    return 6;
+  }
+
   /**
    * @dev Called by owner to withdraw all funds from the lock and send them to the `beneficiary`.
    * @param _tokenAddress specifies the token address to withdraw or 0 for ETH. This is usually
@@ -89,7 +102,8 @@ contract MixinLockCore is
    * considering the available balance. Set to 0 or MAX_UINT to withdraw everything.
    *
    * TODO: consider allowing anybody to trigger this as long as it goes to owner anyway?
-   *  -- however be wary of draining funds as it breaks the `cancelAndRefund` use case.
+   *  -- however be wary of draining funds as it breaks the `cancelAndRefund` and `fullRefund`
+   * use cases.
    */
   function withdraw(
     address _tokenAddress,
@@ -140,5 +154,12 @@ contract MixinLockCore is
   {
     require(_beneficiary != address(0), 'INVALID_ADDRESS');
     beneficiary = _beneficiary;
+  }
+
+  function totalSupply()
+    public
+    view returns(uint256)
+  {
+    return _totalSupply;
   }
 }

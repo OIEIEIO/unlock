@@ -38,12 +38,12 @@ export default function configure(
   // Unlock address by default
   // Smart contract deployments yield the same address on a "clean" node as long as long as the
   // migration script runs in the same order.
-  let unlockAddress = '0x885EF47c3439ADE0CB9b33a4D3c534C99964Db93'
+  let unlockAddress = '0x559247Ec8A8771E8C97cDd39b96b9255651E39C5'
   let ERC20Contract = {
     name: runtimeConfig.erc20ContractSymbol || 'DEV',
     address:
       runtimeConfig.erc20ContractAddress ||
-      '0x591AD9066603f5499d12fF4bC207e2f577448c46',
+      '0xFcD4FD1B4F3d5ceDdc19004579A5d7039295DBB9',
   }
   let services = {}
   let supportedProviders = []
@@ -62,6 +62,9 @@ export default function configure(
   // developing.
   let stripeApiKey =
     runtimeConfig.stripeApiKey || 'pk_test_BHXKmScocCfrQ1oW8HTmnVrB'
+  let subgraphURI =
+    runtimeConfig.subgraphURI ||
+    'http://localhost:8000/subgraphs/name/unlock-protocol/unlock'
 
   services['currencyPriceLookup'] =
     'https://api.coinbase.com/v2/prices/ETH-USD/buy'
@@ -141,6 +144,26 @@ export default function configure(
     blockTime = 8000
   }
 
+  if (env === 'dev-kovan') {
+    // In dev-kovan, the network can only be Kovan
+    isRequiredNetwork = networkId => networkId === 42
+    chainExplorerUrlBuilders.etherScan = address =>
+      `https://kovan.etherscan.io/address/${address}`
+    requiredNetworkId = 42
+    paywallUrl = 'https://'
+    supportedProviders = ['Metamask', 'Opera']
+    services['storage'] = { host: runtimeConfig.locksmithHost }
+    services['wedlocks'] = { host: runtimeConfig.wedlocksUri }
+    paywallUrl = runtimeConfig.paywallUrl
+    paywallScriptUrl = runtimeConfig.paywallScriptUrl
+
+    // Address for the Unlock smart contract on Kovan
+    unlockAddress = '0x0B9fe963b789151E53b8bd601590Ea32F9f2453D'
+
+    // Kovan average block time
+    blockTime = 4000
+  }
+
   if (env === 'prod') {
     // In prod, the network can only be mainnet
     isRequiredNetwork = networkId => networkId === 1
@@ -193,5 +216,6 @@ export default function configure(
     unlockStaticUrl,
     chainExplorerUrlBuilders,
     stripeApiKey,
+    subgraphURI,
   }
 }

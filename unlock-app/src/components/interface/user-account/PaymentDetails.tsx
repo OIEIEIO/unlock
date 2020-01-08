@@ -19,33 +19,44 @@ import {
   Column,
   Grid,
   SubmitButton,
+  LoadingButton,
 } from './styles'
 import { signPaymentData } from '../../../actions/user'
+import { UnlockError, isWarningError, WarningError } from '../../../utils/Error'
+import { resetError } from '../../../actions/error'
 
 interface PaymentDetailsProps {
   stripe: stripe.Stripe | null
   signPaymentData: (stripeTokenId: string) => any
+  close: (e: WarningError) => void
+  errors: WarningError[]
 }
 
 interface PaymentFormProps {
   signPaymentData: (stripeTokenId: string) => any
+  close: (e: WarningError) => void
+  errors: WarningError[]
 }
 
 interface PaymentFormState {
   cardHolderName: string
   addressCountry: string
   addressZip: string
+  submitted: boolean
 }
 
 // Memoized because it would constantly rerender (which cleared the Stripe form)
 // because it couldn't tell the props were the same
 export const PaymentDetails = React.memo(
-  ({ stripe, signPaymentData }: PaymentDetailsProps) => {
-    const Form = injectStripe(PaymentForm)
+  ({ stripe, signPaymentData, close, errors }: PaymentDetailsProps) => {
     return (
       <StripeProvider stripe={stripe}>
         <Elements>
-          <Form signPaymentData={signPaymentData} />
+          <InjectedForm
+            signPaymentData={signPaymentData}
+            close={close}
+            errors={errors}
+          />
         </Elements>
       </StripeProvider>
     )
@@ -62,6 +73,7 @@ export class PaymentForm extends React.Component<
       cardHolderName: '',
       addressCountry: '',
       addressZip: '',
+      submitted: false,
     }
   }
 
@@ -78,11 +90,18 @@ export class PaymentForm extends React.Component<
     })
   }
 
-  handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  handleSubmit = async (event?: React.FormEvent) => {
+    if (event) {
+      event.preventDefault()
+    }
 
     const { stripe, signPaymentData } = this.props
     const { addressCountry, addressZip, cardHolderName } = this.state
+
+    this.setState({
+      submitted: true,
+    })
+
     if (stripe) {
       const result = await stripe.createToken({
         address_country: addressCountry,
@@ -94,7 +113,40 @@ export class PaymentForm extends React.Component<
       if (result.token) {
         signPaymentData(result.token.id)
       }
+
+      if (result.error) {
+        this.setState({
+          submitted: false,
+        })
+      }
     }
+  }
+
+  handleReset = () => {
+    const { errors, close } = this.props
+    errors.forEach(e => close(e))
+    this.handleSubmit()
+  }
+
+  submitButton = () => {
+    const { errors } = this.props
+    const { submitted } = this.state
+
+    if (errors.length) {
+      return (
+        <SubmitButton backgroundColor="var(--red)" onClick={this.handleReset}>
+          Clear Errors and Retry
+        </SubmitButton>
+      )
+    } else if (submitted) {
+      return <LoadingButton>Submitting...</LoadingButton>
+    }
+
+    return (
+      <SubmitButton onClick={this.handleSubmit}>
+        Add Payment Method
+      </SubmitButton>
+    )
   }
 
   render() {
@@ -151,22 +203,36 @@ export class PaymentForm extends React.Component<
             </div>
           </CardContainer>
         </Column>
-        <Column size="half">
-          <SubmitButton onClick={this.handleSubmit}>
-            Add Payment Method
-          </SubmitButton>
-        </Column>
+        <Column size="half">{this.submitButton()}</Column>
       </Grid>
     )
   }
 }
 
-export const mapDispatchToProps = (dispatch: any) => ({
+const InjectedForm = injectStripe(PaymentForm)
+
+const mapDispatchToProps = (dispatch: any) => ({
   signPaymentData: (stripeTokenId: string) =>
     dispatch(signPaymentData(stripeTokenId)),
+  close: (e: WarningError) => {
+    dispatch(resetError(e))
+  },
 })
 
-export default connect(
-  null,
-  mapDispatchToProps
-)(PaymentDetails)
+interface ReduxState {
+  account?: Account
+  errors: UnlockError[]
+}
+
+const mapStateToProps = ({ account, errors }: ReduxState) => {
+  const storageWarnings = errors.filter(
+    e => isWarningError(e) && e.kind === 'Storage'
+  )
+
+  return {
+    account,
+    errors: storageWarnings as WarningError[],
+  }
+}
+
+export default connect(mapStateToProps, mapDispatchToProps)(PaymentDetails)

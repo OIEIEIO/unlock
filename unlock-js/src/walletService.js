@@ -4,6 +4,9 @@ import FetchJsonProvider from './FetchJsonProvider'
 import { GAS_AMOUNTS } from './constants'
 import utils from './utils'
 
+const bytecode = require('./bytecode').default
+const abis = require('./abis').default
+
 /**
  * This service interacts with the user's wallet.
  * The functionality is on purpose only about sending transaction and returning the corresponding
@@ -37,7 +40,8 @@ export default class WalletService extends UnlockService {
     this.ready = false
 
     if (typeof provider === 'string') {
-      this.provider = new FetchJsonProvider(provider)
+      // This is when using a local provider with unlocked accounts
+      this.provider = new FetchJsonProvider({ endpoint: provider })
       this.web3Provider = false
     } else if (provider.isUnlock) {
       // TODO: This is very temporary! Immediate priority is to refactor away
@@ -120,66 +124,159 @@ export default class WalletService extends UnlockService {
       transactionType,
       'submitted'
     )
-    const finalTransaction = await transaction.wait()
+    const finalTransaction = await transaction.wait() // TODO: why do we wait here? This should return instantly: getting a hash should not require i/o
     return finalTransaction.hash
     // errors fall through
   }
 
   /**
-   *
-   * @param {PropTypes.address} lock : address of the lock for which we update the price
-   * @param {PropTypes.address} account: account who owns the lock
+   * Updates the key price on a lock
+   * @param {PropTypes.address} lockAddress : address of the lock for which we update the price
    * @param {string} price : new price for the lock
+   * @param {function} callback : callback invoked with the transaction hash
+   * @return Promise<PropTypes.number> newKeyPrice
    */
-  async updateKeyPrice(lock, account, price) {
-    const version = await this.lockContractAbiVersion(lock)
-    return version.updateKeyPrice.bind(this)(lock, account, price)
+  async updateKeyPrice(params = {}, callback) {
+    if (!params.lockAddress) throw new Error('Missing lockAddress')
+    const version = await this.lockContractAbiVersion(params.lockAddress)
+    return version.updateKeyPrice.bind(this)(params, callback)
   }
 
   /**
    * Creates a lock on behalf of the user.
+   * TODO: add param to let the user deploy the version they want.
    * @param {PropTypes.lock} lock
-   * @param {PropTypes.address} owner
+   * @param {function} callback : callback invoked with the transaction hash
+   * @return Promise<PropTypes.address> lockAddress
    */
-  async createLock(lock, owner) {
+  async createLock(lock, callback) {
     const version = await this.unlockContractAbiVersion()
-    return version.createLock.bind(this)(lock, owner)
+    return version.createLock.bind(this)(lock, callback)
+  }
+
+  /**
+   * Deploys a new template for locks
+   * It's a regular lock, but it will never work (purchase function fails)
+   * It just used as template whose address is fed into configUnlock to deploy
+   * locks through a proxy (keeping gas prices much lower)
+   * @param {*} version
+   * @param {*} callback
+   */
+  async deployTemplate(version, callback) {
+    const factory = new ethers.ContractFactory(
+      abis[version].PublicLock.abi,
+      bytecode[version].PublicLock,
+      this.provider.getSigner()
+    )
+
+    const contract = await factory.deploy({
+      gasLimit: 6500000, // TODO use better value (per version?)
+    })
+
+    if (callback) {
+      callback(null, contract.deployTransaction.hash)
+    }
+    await contract.deployed()
+    return contract.address
+  }
+
+  /**
+   * Deploys the unlock contract and initializes it.
+   * This will call the callback twice, once for each transaction
+   */
+  async deployUnlock(version, callback) {
+    // First, deploy the contract
+    const factory = new ethers.ContractFactory(
+      abis[version].Unlock.abi,
+      bytecode[version].Unlock,
+      this.provider.getSigner()
+    )
+    const unlockContract = await factory.deploy({
+      gasLimit: GAS_AMOUNTS.deployContract,
+    })
+
+    if (callback) {
+      callback(null, unlockContract.deployTransaction.hash)
+    }
+
+    await unlockContract.deployed()
+
+    // sets unlockContractAddress
+    this.unlockContractAddress = unlockContract.address
+
+    // Let's now run the initialization
+    const address = await this.provider.getSigner().getAddress()
+    const writableUnlockContract = unlockContract.connect(
+      this.provider.getSigner()
+    )
+    const transaction = await writableUnlockContract.initialize(address, {
+      gasLimit: 1000000,
+    })
+
+    if (callback) {
+      callback(null, transaction.hash)
+    }
+    await this.provider.waitForTransaction(transaction.hash)
+    // TODO: return unlockContractAddress
+  }
+
+  /**
+   * Configures the Unlock contract by setting the following values:
+   * @param {*} publicLockTemplateAddress
+   * @param {*} globalTokenSymbol
+   * @param {*} globalBaseTokenURI
+   * @param {*} callback
+   */
+  async configureUnlock(
+    publicLockTemplateAddress,
+    globalTokenSymbol,
+    globalBaseTokenURI,
+    callback
+  ) {
+    const unlockContract = await this.getUnlockContract()
+
+    const transaction = await unlockContract.functions[
+      'configUnlock(address,string,string)'
+    ](publicLockTemplateAddress, globalTokenSymbol, globalBaseTokenURI, {
+      gasLimit: 200000, // TODO use better value (per version?)
+    })
+
+    if (callback) {
+      callback(null, transaction.hash)
+    }
+
+    return await this.provider.waitForTransaction(transaction.hash)
   }
 
   /**
    * Purchase a key to a lock by account.
-   * The key object is passed so we can kepe track of it from the application
-   * The lock object is required to get the price data
-   * We pass both the owner and the account because at some point, these may be different (someone
-   * purchases a key for someone else)
-   * @param {PropTypes.address} lock
-   * @param {PropTypes.address} owner
-   * @param {string} keyPrice
-   * @param {string} data
-   * @param {string} account
-   * @param {string} erc20Address
+   * The key object is passed so we can keep track of it from the application
+   * TODO: retrieve the keyPrice, erc20Address from chain when applicable
+   * - {PropTypes.address} lockAddress
+   * - {PropTypes.address} owner
+   * - {string} keyPrice
+   * - {string} data
+   * - {PropTypes.address} erc20Address
+   * - {number} decimals
+   * @param {function} callback : callback invoked with the transaction hash
    */
-  async purchaseKey(lock, owner, keyPrice, account, data = '', erc20Address) {
-    const version = await this.lockContractAbiVersion(lock)
-    return version.purchaseKey.bind(this)(
-      lock,
-      owner,
-      keyPrice,
-      account,
-      data,
-      erc20Address
-    )
+  async purchaseKey(params = {}, callback) {
+    if (!params.lockAddress) throw new Error('Missing lockAddress')
+    const version = await this.lockContractAbiVersion(params.lockAddress)
+    return version.purchaseKey.bind(this)(params, callback)
   }
 
   /**
    * Triggers a transaction to withdraw funds from the lock and assign them to the owner.
-   * @param {PropTypes.address} lock
-   * @param {string} amount
-   * @param {Function} callback TODO: implement...
+   * @param {object} params
+   * - {PropTypes.address} lockAddress
+   * - {string} amount
+   * @param {function} callback : callback invoked with the transaction hash
    */
-  async withdrawFromLock(lock, amount) {
-    const version = await this.lockContractAbiVersion(lock)
-    return version.withdrawFromLock.bind(this)(lock, amount)
+  async withdrawFromLock(params = {}, callback) {
+    if (!params.lockAddress) throw new Error('Missing lockAddress')
+    const version = await this.lockContractAbiVersion(params.lockAddress)
+    return version.withdrawFromLock.bind(this)(params, callback)
   }
 
   /**
@@ -220,7 +317,10 @@ export default class WalletService extends UnlockService {
 
   async signDataPersonal(account, data, callback) {
     try {
-      const method = this.web3Provider ? 'personal_sign' : 'eth_sign'
+      let method = 'eth_sign'
+      if (this.web3Provider || this.provider.isUnlock) {
+        method = 'personal_sign'
+      }
       const signature = await this.signMessage(data, method)
       callback(null, Buffer.from(signature).toString('base64'))
     } catch (error) {

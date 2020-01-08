@@ -1,6 +1,6 @@
 import styled from 'styled-components'
 import React from 'react'
-import { RoundedLogo } from '../interface/Logo'
+import { CheckoutFooter } from './CheckoutStyles'
 
 import {
   Locks,
@@ -93,7 +93,6 @@ export const Checkout = ({
       )
     }
   })
-
   return (
     <>
       <Header>
@@ -101,13 +100,13 @@ export const Checkout = ({
         {callToActionParagraphs}
       </Header>
       <CheckoutLocks>
-        {lockAddresses.length == 0 && <LoadingLock />}
-        {checkoutLocks}
+        {lockAddresses.length < Object.keys(config.locks).length && (
+          <LoadingLock />
+        )}
+        {lockAddresses.length === Object.keys(config.locks).length &&
+          checkoutLocks}
       </CheckoutLocks>
-      <Footer>
-        <RoundedLogo />
-        Powered by Unlock
-      </Footer>
+      <CheckoutFooter />
     </>
   )
 }
@@ -134,25 +133,13 @@ const Logo = styled.img`
   max-width: 200px;
 `
 
-const Footer = styled.footer`
-  margin-top: 50px;
-  font-size: 12px;
-  text-align: center;
-
-  div {
-    margin: 8px;
-    vertical-align: middle;
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-  }
-`
-
 const CheckoutLocks = styled.ul`
   display: grid;
   list-style: none;
   margin: 0px;
   padding: 0px;
-  justify-content: space-around;
+  justify-content: center;
+  justify-items: center;
   grid-template-columns: repeat(auto-fit, minmax(186px, 200px));
+  grid-gap: 20px;
 `

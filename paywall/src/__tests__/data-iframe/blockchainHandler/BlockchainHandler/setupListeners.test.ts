@@ -323,6 +323,22 @@ describe('BlockchainHandler - setupListeners', () => {
         expect(web3Service.getKeyByLockForOwner).not.toHaveBeenCalled()
       })
 
+      it('should not create a temporary key for a failed key purchase', () => {
+        expect.assertions(1)
+
+        const normalizedLockAddress = lockAddresses[0]
+        const spy = jest.spyOn(temporaryKeyExports, 'createTemporaryKey')
+
+        walletService.emit('transaction.updated', 'hash', {
+          to: normalizedLockAddress,
+          hash: 'hash',
+          status: TransactionStatus.FAILED,
+          type: TransactionType.KEY_PURCHASE,
+        })
+
+        expect(spy).not.toHaveBeenCalled()
+      })
+
       it('should not create a temporary key for a mined key purchase', () => {
         expect.assertions(1)
 
@@ -337,6 +353,32 @@ describe('BlockchainHandler - setupListeners', () => {
         })
 
         expect(spy).not.toHaveBeenCalled()
+      })
+
+      it('should not create a temporary key for a stale key purchase', () => {
+        expect.assertions(3)
+        const hash = 'hash'
+        const now = new Date().getTime()
+        store.transactions[hash] = {
+          status: TransactionStatus.SUBMITTED,
+          type: TransactionType.KEY_PURCHASE,
+          confirmations: 0,
+          hash,
+          blockNumber: Number.MAX_SAFE_INTEGER,
+          createdAt: new Date(now - 1000 * 60 * 60 * 3), // 3 hours ago
+        }
+        const normalizedLockAddress = lockAddresses[0]
+        const spy = jest.spyOn(temporaryKeyExports, 'createTemporaryKey')
+
+        walletService.emit('transaction.updated', hash, {
+          to: normalizedLockAddress,
+          hash,
+          status: TransactionStatus.SUBMITTED,
+          type: TransactionType.KEY_PURCHASE,
+        })
+        expect(spy).not.toHaveBeenCalled()
+        expect(store.keys[normalizedLockAddress].expiration >= 0).toBeFalsy()
+        expect(store.transactions[hash].status).toBe(TransactionStatus.STALE)
       })
 
       it('should not retrieve a key for a non-key purchase transaction', () => {
@@ -526,7 +568,6 @@ describe('BlockchainHandler - setupListeners', () => {
         // verify lock addresses are normalized
         [lockAddresses[0]]: {
           address: lockAddresses[0],
-          name: '1',
           thing: 1,
         },
       })
@@ -549,7 +590,7 @@ describe('BlockchainHandler - setupListeners', () => {
       expect(store.locks).toEqual({
         [lockAddresses[0]]: {
           address: lockAddresses[0],
-          name: '1', // it uses the configuration name if present
+          name: 'hi',
           keyPrice: '1',
           expirationDuration: 1,
           currencyContractAddress: null,

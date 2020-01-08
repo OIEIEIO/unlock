@@ -1,32 +1,22 @@
 // This file contains type definitions for the various kinds of data that we use
 // throughout unlock-app.
 
-// A bug in eslint causes it to think that this exported enum is "unused". So
-// disable eslint for that declaration until they fix it. TODO: follow up on this.
-/* eslint-disable no-unused-vars */
 export enum TransactionType {
   LOCK_CREATION = 'Lock Creation',
   KEY_PURCHASE = 'Key Purchase',
   WITHDRAWAL = 'Withdrawal',
   UPDATE_KEY_PRICE = 'Update Key Price',
 }
-/* eslint-enable no-unused-vars */
 
-/* eslint-disable no-unused-vars */
 export enum TransactionStatus {
   SUBMITTED = 'submitted',
   PENDING = 'pending',
   MINED = 'mined',
 }
-/* eslint-enable no-unused-vars */
 
-/* eslint-disable no-unused-vars */
 export enum KindOfModal {
   WalletCheckOverlay,
-  PasswordPrompt,
-  ResetPasswordPrompt,
 }
-/* eslint-enable no-unused-vars */
 
 export interface Transaction {
   status: TransactionStatus
@@ -68,12 +58,9 @@ export interface Action {
   [key: string]: any
 }
 
-// TODO: Use this where we have TS files
 export type Dispatch = (action: Action) => any
 
-// This is currrently the way ethers checks the keystore format. TODO:
-// tighten this up? At the moment it just serves to make it difficult
-// to put a decrypted key into the state.
+// This is currrently the way ethers checks the keystore format.
 export interface EncryptedPrivateKey {
   version: number
   [param: string]: any
@@ -153,4 +140,40 @@ export interface Key {
 export interface PurchaseKeyRequest {
   lock: string // lock address
   extraTip: string // extra value to add in addition to key price
+}
+
+export interface KeyMetadata {
+  // These 3 properties are always present -- they come down from the graph as
+  // strings
+  lockName: string
+  expiration: string
+  keyholderAddress: string
+  // Can have any other arbitrary properies, as long as the values are strings.
+  [key: string]: string
+}
+
+// TODO: come up with one master type for the Redux store that we can
+// import from every connected component
+export interface ReduxMetadata {
+  [lockAddress: string]: {
+    [userAddress: string]: {
+      protected?: { [key: string]: string }
+      public?: { [key: string]: string }
+    }
+  }
+}
+
+// Represents the keyholdersByLock GraphQL query result
+export interface KeyholdersByLock {
+  locks: {
+    address: string
+    name: string
+    keys: {
+      expiration: string
+      keyId: string
+      owner: {
+        address: string
+      }
+    }[]
+  }[]
 }

@@ -3,7 +3,6 @@ import { PaywallConfig } from '../../../unlockTypes'
 import IframeHandler from '../../../unlock.js/IframeHandler'
 import MainWindowHandler from '../../../unlock.js/MainWindowHandler'
 import { PostMessages } from '../../../messageTypes'
-import { UnlockWindow } from '../../../windowTypes'
 
 describe('MainWindowHandler - init', () => {
   let fakeWindow: FakeWindow
@@ -21,6 +20,7 @@ describe('MainWindowHandler - init', () => {
       pending: '',
       expired: '',
       confirmed: '',
+      noWallet: '',
     },
   }
 
@@ -35,176 +35,76 @@ describe('MainWindowHandler - init', () => {
     return new MainWindowHandler(fakeWindow, iframes)
   }
 
-  function fullWindow() {
-    return (fakeWindow as unknown) as UnlockWindow
-  }
-
   beforeEach(() => {
     fakeWindow = new FakeWindow()
   })
 
-  it('should call setupUnlockProtocolVariable before getting cache', () => {
-    expect.assertions(2)
+  describe('handling account changes', () => {
+    it('should write the provided account address to localStorage', () => {
+      expect.assertions(1)
 
-    const handler = getMainWindowHandler()
-    handler.setupUnlockProtocolVariable = () => {
-      throw new Error('abort')
-    }
-    handler.getCachedLockState = jest.fn()
+      const handler = getMainWindowHandler()
+      handler.setCachedAccountAddress = jest.fn()
+      handler.init()
 
-    expect(() => handler.init()).toThrow()
-    expect(handler.getCachedLockState).not.toHaveBeenCalled()
+      fakeWindow.receivePostMessageFromIframe(
+        PostMessages.UPDATE_ACCOUNT,
+        '0xaccountAddress',
+        iframes.data.iframe,
+        dataOrigin
+      )
+
+      expect(handler.setCachedAccountAddress).toHaveBeenCalledWith(
+        '0xaccountAddress'
+      )
+    })
   })
 
-  describe('cache', () => {
-    beforeEach(() => {
-      fakeWindow = new FakeWindow()
+  describe('toggling lock state', () => {
+    it('should handle PostMessages.LOCKED by emitting a locked event', () => {
+      expect.assertions(1)
+
+      const handler = getMainWindowHandler()
+      handler.toggleLockState = jest.fn()
+      handler.init()
+
+      fakeWindow.receivePostMessageFromIframe(
+        PostMessages.LOCKED,
+        undefined,
+        iframes.data.iframe,
+        dataOrigin
+      )
+
+      expect(handler.toggleLockState).toHaveBeenCalledWith(PostMessages.LOCKED)
     })
 
-    it('should dispatch "locked" if the cached state is true', () => {
+    it('should handle PostMessages.UNLOCKED by emitting an unlocked event', () => {
+      expect.assertions(1)
+
+      const handler = getMainWindowHandler()
+      handler.toggleLockState = jest.fn()
+      handler.init()
+
+      fakeWindow.receivePostMessageFromIframe(
+        PostMessages.UNLOCKED,
+        [],
+        iframes.data.iframe,
+        dataOrigin
+      )
+
+      expect(handler.toggleLockState).toHaveBeenCalledWith(
+        PostMessages.UNLOCKED
+      )
+    })
+
+    it('should handle PostMessages.ERROR for no crypto wallet by emitting a locked event', () => {
       expect.assertions(2)
 
       const handler = getMainWindowHandler()
-      fakeWindow.storage['__unlockProtocol.locked'] = 'true'
-
-      handler.init()
-      const eventDetail = (fakeWindow.dispatchEvent as any).mock.calls[0][0]
-        .detail
-
-      expect(fakeWindow.dispatchEvent).toHaveBeenCalled()
-      expect(eventDetail).toBe('locked')
-    })
-
-    it('should dispatch "unlocked" if the cached state is false', () => {
-      expect.assertions(2)
-
-      const handler = getMainWindowHandler()
-      fakeWindow.storage['__unlockProtocol.locked'] = 'false'
-
-      handler.init()
-      const eventDetail = (fakeWindow.dispatchEvent as any).mock.calls[0][0]
-        .detail
-
-      expect(fakeWindow.dispatchEvent).toHaveBeenCalled()
-      expect(eventDetail).toBe('unlocked')
-    })
-
-    it('should return default locked state as "undefined"', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
+      handler.toggleLockState = jest.fn()
       handler.init()
 
-      expect(fullWindow().unlockProtocol.getState()).toBeUndefined()
-    })
-
-    it('should set locked state for react apps', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.LOCKED,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(fullWindow().unlockProtocol.getState()).toBe('locked')
-    })
-
-    it('should cache locked state', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.LOCKED,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(handler.getCachedLockState()).toBe(true)
-    })
-
-    it('should dispatch unlockProtocol event, locked', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-      handler.dispatchEvent = jest.fn()
-
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.LOCKED,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(handler.dispatchEvent).toHaveBeenCalledWith('locked')
-    })
-
-    it('should set unlocked state for react apps', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.UNLOCKED,
-        ['address'],
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(fullWindow().unlockProtocol.getState()).toBe('unlocked')
-    })
-
-    it('should cache unlocked state', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-
-      const unlockedLockAddresses = ['address']
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.UNLOCKED,
-        unlockedLockAddresses,
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(handler.getCachedLockState()).toBe(false)
-    })
-
-    it('should dispatch unlockProtocol event, unlocked', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-      handler.dispatchEvent = jest.fn()
-
-      const unlockedLockAddresses = ['address']
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.UNLOCKED,
-        unlockedLockAddresses,
-        iframes.data.iframe,
-        dataOrigin
-      )
-
-      expect(handler.dispatchEvent).toHaveBeenCalledWith('unlocked')
-    })
-
-    it('should dispatch locked when receiving a no crypto wallet error', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-      handler.dispatchEvent = jest.fn()
-
+      // This is the only error message we lock the page for
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.ERROR,
         'no ethereum wallet is available',
@@ -212,15 +112,7 @@ describe('MainWindowHandler - init', () => {
         dataOrigin
       )
 
-      expect(handler.dispatchEvent).toHaveBeenCalledWith('locked')
-    })
-
-    it('should not dispatch anything when receiving other errors', () => {
-      expect.assertions(1)
-
-      const handler = getMainWindowHandler()
-      handler.init()
-      handler.dispatchEvent = jest.fn()
+      expect(handler.toggleLockState).toHaveBeenCalledWith(PostMessages.LOCKED)
 
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.ERROR,
@@ -229,7 +121,8 @@ describe('MainWindowHandler - init', () => {
         dataOrigin
       )
 
-      expect(handler.dispatchEvent).not.toHaveBeenCalled()
+      // We did not call it in response to the second error
+      expect(handler.toggleLockState).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -246,8 +139,8 @@ describe('MainWindowHandler - init', () => {
       }
 
       const handler = getMainWindowHandler(paywallConfig)
-      handler.init()
       handler.hideCheckoutIframe = jest.fn()
+      handler.init()
 
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.DISMISS_CHECKOUT,
@@ -267,9 +160,9 @@ describe('MainWindowHandler - init', () => {
       }
 
       const handler = getMainWindowHandler(paywallConfig)
+      handler.showAccountIframe = jest.fn()
       iframes.accounts.createIframe()
       handler.init()
-      handler.showAccountIframe = jest.fn()
 
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.SHOW_ACCOUNTS_MODAL,
@@ -289,9 +182,9 @@ describe('MainWindowHandler - init', () => {
       }
 
       const handler = getMainWindowHandler(paywallConfig)
+      handler.hideAccountIframe = jest.fn()
       iframes.accounts.createIframe()
       handler.init()
-      handler.hideAccountIframe = jest.fn()
 
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.HIDE_ACCOUNTS_MODAL,

@@ -5,6 +5,7 @@ import { getAccountFromPrivateKey } from './accounts'
 import UnlockUser from './structured_data/unlockUser'
 import UnlockPaymentDetails from './structured_data/unlockPaymentDetails'
 import UnlockPurchaseRequest from './structured_data/unlockPurchaseRequest'
+import EjectionRequest from './structured_data/ejectionRequest'
 
 // UnlockProvider implements a subset of Web3 provider functionality, sufficient
 // to allow us to use it as a stand-in for MetaMask or other Web3 integration in
@@ -57,6 +58,18 @@ export default class UnlockProvider extends providers.JsonRpcProvider {
     return this[method](params)
   }
 
+  /**
+   * Implementation of personal_sign JSON-RPC call
+   * @param {string} data the data to sign.
+   * @param {string} _ the address to sign it with -- ignored because
+   * we use the address in this class.
+   */
+  // eslint-disable-next-line no-unused-vars
+  personal_sign([data, _]) {
+    const privateKey = toBuffer(this.wallet.privateKey)
+    return sigUtil.personalSign(privateKey, { data })
+  }
+
   // Signature methods
   // TODO: move these into their own module so they aren't directly accessible
   // on the provider?
@@ -103,6 +116,16 @@ export default class UnlockProvider extends providers.JsonRpcProvider {
       input
     )
     const data = UnlockPurchaseRequest.build(purchaseRequest)
+    return this.signData(data)
+  }
+
+  generateSignedEjectionRequest() {
+    const ejectionRequest = {
+      user: {
+        publicKey: this.wallet.address,
+      },
+    }
+    const data = EjectionRequest.build(ejectionRequest)
     return this.signData(data)
   }
 }

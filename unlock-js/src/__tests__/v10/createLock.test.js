@@ -1,14 +1,12 @@
 import { ethers } from 'ethers'
 import * as UnlockV10 from 'unlock-abi-1-0'
 import utils from '../../utils'
-import Errors from '../../errors'
 import TransactionTypes from '../../transactionTypes'
 import NockHelper from '../helpers/nockHelper'
 import { prepWalletService, prepContract } from '../helpers/walletServiceHelper'
 import { UNLIMITED_KEYS_COUNT, ETHERS_MAX_UINT } from '../../../lib/constants'
 import erc20 from '../../erc20'
 
-const { FAILED_TO_CREATE_LOCK } = Errors
 const endpoint = 'http://127.0.0.1:8545'
 const nock = new NockHelper(endpoint, false /** debug */)
 
@@ -16,7 +14,6 @@ let walletService
 let transaction
 let transactionResult
 let setupSuccess
-let setupFail
 const lock = {
   name: 'My Fancy Lock',
   address: '0x0987654321098765432109876543210987654321',
@@ -38,9 +35,13 @@ jest.mock('../../erc20.js', () => {
   }
 })
 
-const owner = '0xdeadfeed'
 let testERC20ContractAddress = '0x9409bd2f87f0698f89c04caee8ddb2fd9e44bcc3'
+const EventInfo = new ethers.utils.Interface(UnlockV10.Unlock.abi)
+const encoder = ethers.utils.defaultAbiCoder
 
+let receipt = {
+  logs: [],
+}
 describe('v10', () => {
   describe('createLock', () => {
     async function nockBeforeEach(maxNumberOfKeys = lock.maxNumberOfKeys) {
@@ -56,7 +57,6 @@ describe('v10', () => {
         testTransaction,
         testTransactionResult,
         success,
-        fail,
       } = callMethodData(
         lock.expirationDuration,
         ethers.constants.AddressZero,
@@ -65,10 +65,12 @@ describe('v10', () => {
         lock.name
       )
 
+      walletService.provider.waitForTransaction = jest.fn(() =>
+        Promise.resolve(receipt)
+      )
       transaction = testTransaction
       transactionResult = testTransactionResult
       setupSuccess = success
-      setupFail = fail
     }
 
     describe('when not explicitly providing the address of a denominating currency contract ', () => {
@@ -83,7 +85,7 @@ describe('v10', () => {
         )
         const mock = walletService._handleMethodCall
 
-        await walletService.createLock(lock, owner)
+        await walletService.createLock(lock)
 
         expect(mock).toHaveBeenCalledWith(
           expect.any(Promise),
@@ -136,7 +138,7 @@ describe('v10', () => {
 
         setupSuccess()
 
-        await walletService.createLock(erc20Lock, owner)
+        await walletService.createLock(erc20Lock)
         await nock.resolveWhenAllNocksUsed()
       })
 
@@ -173,12 +175,11 @@ describe('v10', () => {
             maxNumberOfKeys: erc20Lock.maxNumberOfKeys,
             outstandingKeys: 0,
             name: erc20Lock.name,
-            owner,
             currencyContractAddress: testERC20ContractAddress,
           })
         })
 
-        await walletService.createLock(erc20Lock, owner)
+        await walletService.createLock(erc20Lock)
         await nock.resolveWhenAllNocksUsed()
       })
 
@@ -208,7 +209,7 @@ describe('v10', () => {
 
         setupSuccess()
 
-        await walletService.createLock(erc20Lock, owner)
+        await walletService.createLock(erc20Lock)
         await nock.resolveWhenAllNocksUsed()
       })
     })
@@ -229,11 +230,10 @@ describe('v10', () => {
           maxNumberOfKeys: lock.maxNumberOfKeys,
           outstandingKeys: 0,
           name: lock.name,
-          owner,
         })
       })
 
-      await walletService.createLock(lock, owner)
+      await walletService.createLock(lock)
       await nock.resolveWhenAllNocksUsed()
     })
 
@@ -255,34 +255,52 @@ describe('v10', () => {
           maxNumberOfKeys: UNLIMITED_KEYS_COUNT,
           outstandingKeys: 0,
           name: lock.name,
-          owner,
         })
       })
 
-      await walletService.createLock(
-        {
-          ...lock,
-          maxNumberOfKeys: UNLIMITED_KEYS_COUNT,
-        },
-        owner
-      )
+      await walletService.createLock({
+        ...lock,
+        maxNumberOfKeys: UNLIMITED_KEYS_COUNT,
+      })
 
       await nock.resolveWhenAllNocksUsed()
     })
 
-    it('should emit an error if the transaction could not be sent', async () => {
+    it('should yield a promise of lock address', async () => {
       expect.assertions(1)
 
-      const error = { code: 404, data: 'oops' }
       await nockBeforeEach()
-      setupFail(error)
+      setupSuccess()
 
-      walletService.on('error', error => {
-        expect(error.message).toBe(FAILED_TO_CREATE_LOCK)
-      })
+      // For now we do not use this
+      const sender = '0x0000000000000000000000000000000000000000'
 
-      await walletService.createLock(lock, owner)
+      walletService.provider.waitForTransaction = jest.fn(() =>
+        Promise.resolve({
+          logs: [
+            {
+              transactionIndex: 1,
+              blockNumber: 19759,
+              transactionHash:
+                '0xace0af5853a98aff70ca427f21ad8a1a958cc219099789a3ea6fd5fac30f150c',
+              address: lock.address,
+              topics: [
+                EventInfo.events['NewLock(address,address)'].topic,
+                encoder.encode(['address'], [sender]),
+                encoder.encode(['address'], [lock.address]),
+              ],
+              data: '0x',
+              logIndex: 0,
+              blockHash:
+                '0xcb27b74a5ff04b129b645bbcfde46fe1a221c2d341223df4ad2ca87e9864678a',
+              transactionLogIndex: 0,
+            },
+          ],
+        })
+      )
+      const lockAddress = await walletService.createLock(lock)
       await nock.resolveWhenAllNocksUsed()
+      expect(lockAddress).toEqual(lock.address)
     })
   })
 })

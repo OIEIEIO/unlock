@@ -4,6 +4,7 @@ export const LOGIN_CREDENTIALS = 'login/GOT_CREDENTIALS'
 export const LOGIN_SUCCEEDED = 'login/SUCCESS'
 export const LOGIN_FAILED = 'login/FAILED'
 export const SIGNUP_EMAIL = 'signup/GOT_EMAIL'
+export const WELCOME_EMAIL = 'signup/WELCOME_EMAIL'
 export const SIGNUP_CREDENTIALS = 'signup/GOT_CREDENTIALS'
 export const SIGNUP_FAILED = 'signup/FAILED'
 export const SIGNUP_SUCCEEDED = 'signup/SUCCESS'
@@ -21,6 +22,9 @@ export const SIGN_PURCHASE_DATA = 'userCredentials/SIGN_PURCHASE_DATA'
 export const SIGNED_PURCHASE_DATA = 'userCredentials/SIGNED_PURCHASE_DATA'
 export const GET_STORED_PAYMENT_DETAILS = 'userAccount/GET_PAYMENT_DETAILS'
 export const KEY_PURCHASE_INITIATED = 'userAccount/KEY_PURCHASE_INITIATED'
+export const QR_EMAIL = 'keychain/QR_EMAIL'
+export const SIGN_ACCOUNT_EJECTION = 'userAccount/SIGN_ACCOUNT_EJECTION'
+export const SIGNED_ACCOUNT_EJECTION = 'userAccount/SIGNED_ACCOUNT_EJECTION'
 
 export interface Credentials {
   emailAddress: string
@@ -48,6 +52,12 @@ export const loginFailed = (reason: string) => ({
 export const signupEmail = (emailAddress: string) => ({
   type: SIGNUP_EMAIL,
   emailAddress,
+})
+
+export const welcomeEmail = (emailAddress: string, recoveryKey: string) => ({
+  type: WELCOME_EMAIL,
+  emailAddress,
+  recoveryKey,
 })
 
 export const signupCredentials = ({ emailAddress, password }: Credentials) => ({
@@ -133,6 +143,29 @@ export const signPaymentData = (stripeTokenId: string) => ({
   stripeTokenId,
 })
 
+export const signAccountEjection = (userAddress: string) => ({
+  type: SIGN_ACCOUNT_EJECTION,
+  userAddress,
+})
+
+interface SignedAccountEjection {
+  data: {
+    message: {
+      publicKey: string
+    }
+  }
+  sig: any
+}
+
+export const signedAccountEjection = ({
+  data,
+  sig,
+}: SignedAccountEjection) => ({
+  type: SIGNED_ACCOUNT_EJECTION,
+  data,
+  sig,
+})
+
 interface SignedPaymentData {
   data: {
     message: {
@@ -185,4 +218,15 @@ export const signedPurchaseData = ({ data, sig }: SignedPurchaseData) => ({
 
 export const keyPurchaseInitiated = () => ({
   type: KEY_PURCHASE_INITIATED,
+})
+
+export const qrEmail = (
+  recipient: string,
+  lockName: string,
+  keyQR: string
+) => ({
+  type: QR_EMAIL,
+  recipient,
+  lockName,
+  keyQR,
 })

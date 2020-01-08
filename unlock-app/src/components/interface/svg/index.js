@@ -2,6 +2,7 @@ import React from 'react'
 import About from './About'
 import AppStore from './AppStore'
 import Arrow from './Arrow'
+import Attention from './Attention'
 import Checkmark from './Checkmark'
 import Close from './Close'
 import Code from './Code'
@@ -15,11 +16,11 @@ import EthSub from './EthSub'
 import Export from './Export'
 import Github from './Github'
 import Heart from './Heart'
+import Key from './Key'
 import Lemniscate from './Lemniscate'
 import LiveDemo from './LiveDemo'
 import Loading from './Loading'
 import LockClosed from './LockClosed'
-import Log from './Log'
 import Jobs from './Jobs'
 import Preview from './Preview'
 import Unlock from './Unlock'
@@ -27,12 +28,15 @@ import UnlockWordMark from './UnlockWordMark'
 import Upload from './Upload'
 import Withdraw from './Withdraw'
 import Newsletter from './Email'
+import Members from './Members'
 import Telegram from './Telegram'
 import Ticket from './Ticket'
 import Twitter from './Twitter'
 import Bars from './Bars'
 import ChevronUp from './ChevronUp'
 import Home from './Home'
+import Qr from './Qr'
+import Wordpress from './Wordpress'
 
 function wrapViewBox(WrappedComponent, viewBox) {
   const Wrapped = props => <WrappedComponent viewBox={viewBox} {...props} />
@@ -43,6 +47,7 @@ export default {
   AppStore: wrapViewBox(AppStore, '0 0 24 24'),
   About: wrapViewBox(About, '0 0 24 24'),
   Arrow: wrapViewBox(Arrow, '0 0 24 24'),
+  Attention: wrapViewBox(Attention, '0 0 96 96'),
   Checkmark: wrapViewBox(Checkmark, '0 0 24 24'),
   Close: wrapViewBox(Close, '0 0 24 24'),
   Code: wrapViewBox(Code, '0 0 24 24'),
@@ -56,11 +61,11 @@ export default {
   Export: wrapViewBox(Export, '0 0 24 24'),
   Github: wrapViewBox(Github, '0 0 24 24'),
   Heart: wrapViewBox(Heart, '-6 -6 36 36'),
+  Key: wrapViewBox(Key, '0 0 24 24'),
   Lemniscate: wrapViewBox(Lemniscate, '0 0 24 24'),
   LiveDemo: wrapViewBox(LiveDemo, '0 0 64 64'),
   Loading: wrapViewBox(Loading, '0 0 32 32'),
   LockClosed: wrapViewBox(LockClosed, '0 0 24 24'),
-  Log: wrapViewBox(Log, '0 0 24 24'),
   Preview: wrapViewBox(Preview, '0 0 24 24'),
   Jobs: wrapViewBox(Jobs, '0 0 24 24'),
   Unlock: wrapViewBox(Unlock, '0 0 56 56'),
@@ -68,10 +73,13 @@ export default {
   Upload: wrapViewBox(Upload, '0 0 24 24'),
   Withdraw: wrapViewBox(Withdraw, '0 0 24 24'),
   Newsletter: wrapViewBox(Newsletter, '0 0 24 24'),
+  Members: wrapViewBox(Members, '-4 -4 24 24'),
   Telegram: wrapViewBox(Telegram, '0 0 24 24'),
   Ticket: wrapViewBox(Ticket, '-8 -6 40 40'),
   Twitter: wrapViewBox(Twitter, '0 0 24 24'),
   Bars: wrapViewBox(Bars, '0 0 56 42'),
   ChevronUp: wrapViewBox(ChevronUp, '0 0 58 32'),
   Home: wrapViewBox(Home, '0 0 24 24'),
+  Qr: wrapViewBox(Qr, '0 0 60 60'),
+  Wordpress: wrapViewBox(Wordpress, '0 0 340 340'),
 }

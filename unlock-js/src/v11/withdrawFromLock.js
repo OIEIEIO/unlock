@@ -1,29 +1,51 @@
 import utils from '../utils'
 import { GAS_AMOUNTS } from '../constants'
 import TransactionTypes from '../transactionTypes'
-import Errors from '../errors'
 
 /**
  * Triggers a transaction to withdraw funds from the lock and assign them to the owner.
- * @param {PropTypes.address} lock
- * @param {PropTypes.address} amount
- * @param {Function} callback TODO: implement...
+ * By default (amount=0), this withdraws all funds.
+ * @param {PropTypes.address} lockAddress
+ * @param {string} amount
+ * @param {number} decimals
+ * TODO: get the decimal from the ERC20 contract
+ * @param {function} callback invoked with the transaction hash
  */
-export default async function(lockAddress, amount = '0') {
+export default async function(
+  { lockAddress, amount = '0', decimals = 18 },
+  callback
+) {
   const lockContract = await this.getLockContract(lockAddress)
-  let transactionPromise
-  const weiAmount = utils.toWei(amount) // TODO: fix for ERC20 locks for which the amount to withdraw may be of a different unit!
 
-  try {
-    transactionPromise = lockContract['withdraw(uint256)'](weiAmount, {
-      gasLimit: GAS_AMOUNTS.withdraw, // overrides default value for transaction gas price
+  const actualAmount = utils.toDecimal(amount, decimals)
+
+  const transactionPromise = lockContract['withdraw(uint256)'](actualAmount, {
+    gasLimit: GAS_AMOUNTS.withdraw,
+  })
+  const hash = await this._handleMethodCall(
+    transactionPromise,
+    TransactionTypes.WITHDRAWAL
+  )
+
+  if (callback) {
+    callback(null, hash)
+  }
+
+  // Let's now wait for the funds to have been withdrawn
+  const receipt = await this.provider.waitForTransaction(hash)
+  const parser = lockContract.interface
+  const withdrawalEvent = receipt.logs
+    .map(log => {
+      if (log.address !== lockAddress) return // Some events are triggered by the ERC20 contract
+      return parser.parseLog(log)
     })
-    const ret = await this._handleMethodCall(
-      transactionPromise,
-      TransactionTypes.WITHDRAWAL
-    )
-    return ret
-  } catch (error) {
-    this.emit('error', new Error(Errors.FAILED_TO_WITHDRAW_FROM_LOCK))
+    .filter(event => {
+      return event && event.name === 'Withdrawal'
+    })[0]
+  if (withdrawalEvent) {
+    return utils.fromWei(withdrawalEvent.values.amount.toString(), 'ether')
+  } else {
+    // There was no Withdrawal log (transaction failed?)
+    return null
   }
 }

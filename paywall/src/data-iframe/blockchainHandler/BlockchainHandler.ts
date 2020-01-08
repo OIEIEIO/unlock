@@ -13,7 +13,6 @@ import {
   KeyResult,
   WalletServiceType,
   Web3ServiceType,
-  ConstantsType,
   BlockchainData,
   LocksmithTransactionsResult,
   TransactionDefaults,
@@ -26,6 +25,7 @@ import {
   normalizeAddressKeys,
   normalizeLockAddress,
 } from '../../utils/normalizeAddresses'
+import { isERC20Lock } from '../../utils/locks'
 import { createTemporaryKey } from './createTemporaryKey'
 
 /**
@@ -52,7 +52,7 @@ export function makeDefaultKeys(
 interface BlockchainHandlerParams {
   walletService: WalletServiceType
   web3Service: Web3ServiceType
-  constants: ConstantsType
+  constants: any
   configuration: PaywallConfig
   emitChanges: (data: BlockchainData) => void
   emitError: (error: Error) => void
@@ -71,7 +71,7 @@ export { Web3Service, WalletService }
 export default class BlockchainHandler {
   private walletService: WalletServiceType
   private web3Service: Web3ServiceType
-  private constants: ConstantsType
+  private constants: any
   private emitChanges: (data: BlockchainData) => void
   private emitError: (error: Error) => void
   private window: FetchWindow & SetTimeoutWindow
@@ -89,7 +89,13 @@ export default class BlockchainHandler {
     store = {
       config: {
         locks: {},
-        callToAction: { default: '', expired: '', pending: '', confirmed: '' },
+        callToAction: {
+          default: '',
+          expired: '',
+          pending: '',
+          confirmed: '',
+          noWallet: '',
+        },
       },
       account: null,
       balance: {
@@ -160,16 +166,12 @@ export default class BlockchainHandler {
   }) {
     if (!this.store.account) return
     const account = this.store.account as string
-
-    // Support the currency!
-    return this.walletService.purchaseKey(
+    return this.walletService.purchaseKey({
       lockAddress,
-      account,
-      amountToSend,
-      null /* account */, // THIS FIELD HAS BEEN DEPRECATED AND WILL BE IGNORED
-      null /* data */, // THIS FIELD HAS BEEN DEPRECATED AND WILL BE IGNORED
-      erc20Address
-    )
+      owner: account,
+      keyPrice: amountToSend,
+      erc20Address,
+    })
   }
 
   /**
@@ -324,18 +326,35 @@ export default class BlockchainHandler {
       // ensure all references to locks are normalized
       update.to = normalizeLockAddress(update.to)
     }
+
     this._mergeUpdate(
       hash,
       'transactions',
       {
         hash,
         blockNumber: Number.MAX_SAFE_INTEGER,
-        status: 'submitted',
+        status: TransactionStatus.SUBMITTED,
       },
       update
     )
+
     const transaction = this.store.transactions[hash]
+    // Submitted transaction are the ones which are not known by the web3 node to which we
+    // asked. So either they are very recent (and have not propagated to all mempools), or
+    // they are old and have been dropped from all mempools.
+    // In that latter case, we want to consider these transactions as STALE (as they are not going
+    // to happen).
+    if (
+      transaction.status === TransactionStatus.SUBMITTED &&
+      transaction.createdAt &&
+      transaction.createdAt.getTime() < Date.now() - 60 * 60 * 1000
+    ) {
+      transaction.status = TransactionStatus.STALE
+    }
+
     const isMined = transaction.status === TransactionStatus.MINED
+    const isStale = transaction.status === TransactionStatus.STALE
+    const isFailed = transaction.status === TransactionStatus.FAILED
     const recipient = transaction.lock || transaction.to
     const isKeyPurchase = transaction.type === TransactionType.KEY_PURCHASE
     const accountAddress = this.store.account as string
@@ -348,7 +367,7 @@ export default class BlockchainHandler {
 
     // If we receive a submitted or pending key purchase we should
     // create and store a temporary key.
-    if (isKeyPurchase && recipient && !isMined) {
+    if (isKeyPurchase && recipient && !isMined && !isStale && !isFailed) {
       const lock = this.store.locks[recipient]
       const temporaryKey = createTemporaryKey(recipient, accountAddress, lock)
       this.store.keys[recipient] = temporaryKey
@@ -365,19 +384,10 @@ export default class BlockchainHandler {
     if (update.address) {
       update.address = normalizeLockAddress(update.address)
     }
-    if (this.store.config.locks[address].name) {
-      // use the configuration lock name if present
-      update.name = this.store.config.locks[address].name
-    }
 
     // If the lock is in a non ethereum currency, we need to get the balance of currency for that user
     if (update.currencyContractAddress && this.store.account) {
-      const balance = await this.web3Service.getTokenBalance(
-        update.currencyContractAddress,
-        this.store.account
-      )
-      this.store.balance[update.currencyContractAddress] = balance
-      this.dispatchChangesToPostOffice()
+      this.getTokenBalance(update.currencyContractAddress)
     }
 
     this._mergeUpdate(
@@ -388,6 +398,17 @@ export default class BlockchainHandler {
       },
       update
     )
+  }
+
+  async getTokenBalance(currencyContractAddress: string) {
+    if (this.store.account) {
+      const balance = await this.web3Service.getTokenBalance(
+        currencyContractAddress,
+        this.store.account
+      )
+      this.store.balance[currencyContractAddress] = balance
+      this.dispatchChangesToPostOffice()
+    }
   }
 
   /**
@@ -463,7 +484,10 @@ export default class BlockchainHandler {
       // TODO: which purchase failed? unlock-js needs to provide this information
       // for now, we will kill all submitted transactions and re-fetch
       this.store.transactions = Object.keys(this.store.transactions)
-        .filter(hash => this.store.transactions[hash].status !== 'submitted')
+        .filter(
+          hash =>
+            this.store.transactions[hash].status !== TransactionStatus.SUBMITTED
+        )
         .reduce(
           (allTransactions: Transactions, hash) => ({
             ...allTransactions,
@@ -513,7 +537,7 @@ export default class BlockchainHandler {
       .map(lockAddress => `recipient[]=${encodeURIComponent(lockAddress)}`)
       .join('&')
 
-    const url = `${this.constants.locksmithHost}/transactions?for=${this.store.account}&${filterLocks}`
+    const url = `${this.constants.locksmithUri}/transactions?for=${this.store.account}&${filterLocks}`
 
     const response = await this.window.fetch(url)
     const result: {
@@ -522,6 +546,7 @@ export default class BlockchainHandler {
     if (result.transactions) {
       result.transactions
         .map(t => ({
+          createdAt: new Date(t.createdAt),
           hash: t.transactionHash,
           network: t.chain,
           to: t.recipient,
@@ -529,17 +554,35 @@ export default class BlockchainHandler {
           from: t.sender,
           for: t.for,
         }))
-        .filter(transaction => transaction.network === this.store.network)
         .map((transaction: TransactionDefaults) => {
           // we pass the transaction as defaults if it has input set, so that we can
           // parse out the transaction type and other details. If input is not set,
           // we can't safely pass the transaction default
+          this._mergeUpdate(
+            transaction.hash,
+            'transactions',
+            {
+              hash: transaction.hash,
+              blockNumber: Number.MAX_SAFE_INTEGER,
+              status: TransactionStatus.SUBMITTED, // This will be updated from web3Service
+            },
+            transaction
+          )
           this.web3Service
             .getTransaction(
               transaction.hash,
               transaction.input ? transaction : undefined
             )
-            .catch(error => this.emitError(error))
+            .catch(() => {
+              // For now, ignore failure: this means locksmith knows of a transaction
+              // Which does not exist. Probably stale?
+              // this.emitError(error)
+              // eslint-disable-next-line no-console
+              console.log(
+                'unable to retrieve saved transaction from blockchain'
+              )
+              // eslint-disable-next-line no-console
+            })
         })
     }
   }
@@ -554,7 +597,7 @@ export default class BlockchainHandler {
     // we use the transaction lock as the recipient
     const recipient = transaction.lock || transaction.to
 
-    const url = `${this.constants.locksmithHost}/transaction`
+    const url = `${this.constants.locksmithUri}/transaction`
 
     const payload = {
       transactionHash: transaction.hash,
@@ -617,6 +660,11 @@ export default class BlockchainHandler {
     this.store.transactions = {}
     if (this.store.account) {
       this.web3Service.refreshAccountBalance({ address: this.store.account })
+      // We need to refresh ERC20 token balances whenever we reset
+      const erc20locks = Object.values(this.store.locks).filter(isERC20Lock)
+      erc20locks.forEach(lock =>
+        this.getTokenBalance(lock.currencyContractAddress!)
+      )
     }
     this.retrieveCurrentBlockchainData()
     this.dispatchChangesToPostOffice()

@@ -7,12 +7,14 @@ import Close from './Close'
 import Code from './Code'
 import Copy from './Copy'
 import Download from './Download'
+import Docs from './Docs'
 import Edit from './Edit'
 import Eth from './Eth'
 import Etherscan from './Etherscan'
 import EthSub from './EthSub'
 import Export from './Export'
 import Github from './Github'
+import Key from './Key'
 import Lemniscate from './Lemniscate'
 import Loading from './Loading'
 import LockClosed from './LockClosed'
@@ -44,12 +46,14 @@ export default {
   Code: wrapViewBox(Code, '0 0 24 24'),
   Copy: wrapViewBox(Copy, '0 0 24 24'),
   Download: wrapViewBox(Download, '0 0 24 24'),
+  Docs: wrapViewBox(Docs, '-6 -5 24 24'),
   Edit: wrapViewBox(Edit, '0 0 24 24'),
   Eth: wrapViewBox(Eth, '0 0 24 24'),
   Etherscan: wrapViewBox(Etherscan, '0 0 24 24'),
   EthSub: wrapViewBox(EthSub, '0 0 24 24'),
   Export: wrapViewBox(Export, '0 0 24 24'),
   Github: wrapViewBox(Github, '0 0 24 24'),
+  Key: wrapViewBox(Key, '-3 -3 24 24'),
   Lemniscate: wrapViewBox(Lemniscate, '0 0 24 24'),
   Loading: wrapViewBox(Loading, '0 0 32 32'),
   LockClosed: wrapViewBox(LockClosed, '0 0 24 24'),

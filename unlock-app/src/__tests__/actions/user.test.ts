@@ -37,6 +37,14 @@ import {
   signedPurchaseData,
   KEY_PURCHASE_INITIATED,
   keyPurchaseInitiated,
+  WELCOME_EMAIL,
+  welcomeEmail,
+  QR_EMAIL,
+  qrEmail,
+  signAccountEjection,
+  SIGN_ACCOUNT_EJECTION,
+  signedAccountEjection,
+  SIGNED_ACCOUNT_EJECTION,
 } from '../../actions/user'
 
 const key = {
@@ -180,6 +188,19 @@ describe('user account actions', () => {
 
       expect(signupSucceeded()).toEqual(expectedAction)
     })
+
+    it('should create an action to send a welcome email with the recovery key', () => {
+      expect.assertions(1)
+      const recoveryKey = 'do not lose this'
+      const emailAddress = 'julien@unlock-protocol.com'
+      const expectedAction = {
+        type: WELCOME_EMAIL,
+        emailAddress,
+        recoveryKey,
+      }
+
+      expect(welcomeEmail(emailAddress, recoveryKey)).toEqual(expectedAction)
+    })
   })
 
   describe('user account maintenance actions', () => {
@@ -262,6 +283,41 @@ describe('user account actions', () => {
 
       expect(signedPaymentData({ data, sig })).toEqual(expectedAction)
     })
+
+    it('should create an action requesting a user ejection signing', () => {
+      expect.assertions(1)
+      const userAddress = '0x123'
+
+      const expectedAction = {
+        type: SIGN_ACCOUNT_EJECTION,
+        userAddress,
+      }
+
+      expect(signAccountEjection(userAddress)).toEqual(expectedAction)
+    })
+
+    it('should create an action indicating that a user ejection has been signed', () => {
+      expect.assertions(1)
+      const data = {
+        message: {
+          publicKey: '0x123',
+        },
+      }
+      const sig = 'signature'
+
+      const expectedAction = {
+        type: SIGNED_ACCOUNT_EJECTION,
+        data,
+        sig,
+      }
+
+      expect(
+        signedAccountEjection({
+          data,
+          sig,
+        })
+      ).toEqual(expectedAction)
+    })
   })
 
   describe('user transaction actions', () => {
@@ -322,6 +378,24 @@ describe('user account actions', () => {
       }
 
       expect(gotPassword(password)).toEqual(expectedAction)
+    })
+  })
+
+  describe('QR code email action', () => {
+    it('should create an action to send an email with a QR code', () => {
+      expect.assertions(1)
+      const recipient = 'hank@minerals.co'
+      const lockName = 'Quartz Gang'
+      const keyQR = 'data:png;base64,etcetcetc'
+
+      const expectedAction = {
+        type: QR_EMAIL,
+        recipient,
+        lockName,
+        keyQR,
+      }
+
+      expect(qrEmail(recipient, lockName, keyQR)).toEqual(expectedAction)
     })
   })
 })

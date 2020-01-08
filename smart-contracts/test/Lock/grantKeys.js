@@ -1,5 +1,6 @@
 const Web3Utils = require('web3-utils')
 
+const truffleAssert = require('truffle-assertions')
 const deployLocks = require('../helpers/deployLocks')
 const shouldFail = require('../helpers/shouldFail')
 
@@ -29,8 +30,8 @@ contract('Lock / grantKeys', accounts => {
 
       it('should log Transfer event', async () => {
         assert.equal(tx.logs[0].event, 'Transfer')
-        assert.equal(tx.logs[0].args._from, 0)
-        assert.equal(tx.logs[0].args._to, accounts[2])
+        assert.equal(tx.logs[0].args.from, 0)
+        assert.equal(tx.logs[0].args.to, accounts[2])
       })
 
       it('should acknowledge that user owns key', async () => {
@@ -53,8 +54,8 @@ contract('Lock / grantKeys', accounts => {
 
       it('should log Transfer event', async () => {
         assert.equal(tx.logs[0].event, 'Transfer')
-        assert.equal(tx.logs[0].args._from, 0)
-        assert.equal(tx.logs[0].args._to, accounts[2])
+        assert.equal(tx.logs[0].args.from, 0)
+        assert.equal(tx.logs[0].args.to, accounts[2])
       })
 
       it('should acknowledge that user owns key', async () => {
@@ -70,11 +71,11 @@ contract('Lock / grantKeys', accounts => {
       const keyOwnerList = [accounts[3], accounts[4], accounts[5]]
 
       it('should fail to grant keys when expiration dates are missing', async () => {
-        await shouldFail(
+        await truffleAssert.fails(
           lock.grantKeys(keyOwnerList, [validExpirationTimestamp], {
             from: lockOwner,
           }),
-          'invalid opcode'
+          'revert'
         )
       })
     })

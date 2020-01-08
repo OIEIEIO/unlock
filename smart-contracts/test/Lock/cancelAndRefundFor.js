@@ -1,5 +1,6 @@
 const Units = require('ethereumjs-units')
 const BigNumber = require('bignumber.js')
+const truffleAssert = require('truffle-assertions')
 
 const deployLocks = require('../helpers/deployLocks')
 const shouldFail = require('../helpers/shouldFail')
@@ -23,25 +24,27 @@ function fixSignature(signature) {
 
 // signs message in node (ganache auto-applies "Ethereum Signed Message" prefix)
 async function signMessage(messageHex, signer) {
-  return fixSignature(await web3.eth.sign(messageHex, signer))
+  const signature = fixSignature(await web3.eth.sign(messageHex, signer))
+  const v = '0x' + signature.slice(130, 132)
+  const r = signature.slice(0, 66)
+  const s = '0x' + signature.slice(66, 130)
+  return { v, r, s }
 }
 
 contract('Lock / cancelAndRefundFor', accounts => {
-  before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, accounts[0])
-  })
-
   let lock
   const keyOwners = [accounts[1], accounts[2], accounts[3], accounts[4]]
   const txSender = accounts[9]
   const keyPrice = new BigNumber(Units.convert(0.01, 'eth', 'wei'))
   let lockOwner
 
-  before(async () => {
+  beforeEach(async () => {
+    unlock = await getProxy(unlockContract)
+    locks = await deployLocks(unlock, accounts[0])
+
     lock = locks['SECOND']
     const purchases = keyOwners.map(account => {
-      return lock.purchase(account, web3.utils.padLeft(0, 40), [], {
+      return lock.purchase(0, account, web3.utils.padLeft(0, 40), [], {
         value: keyPrice.toFixed(),
         from: account,
       })
@@ -56,18 +59,21 @@ contract('Lock / cancelAndRefundFor', accounts => {
   })
 
   it('can increment nonce', async () => {
-    await lock.invalidateApprovalToCancelKey({ from: keyOwners[0] })
+    await lock.invalidateOffchainApproval('1', { from: keyOwners[0] })
   })
 
-  it('can read the non-zero nonce', async () => {
-    const nonce = new BigNumber(await lock.keyOwnerToNonce.call(keyOwners[0]))
-    assert.equal(nonce.toFixed(), 1)
+  it('has the expected typehash', async () => {
+    const typehash = await lock.CANCEL_TYPEHASH()
+    const expected = web3.utils.keccak256(
+      'cancelAndRefundFor(address _keyOwner)'
+    )
+    assert.equal(typehash, expected)
   })
 
   describe('should cancel and refund when enough time remains', () => {
     let initialLockBalance, initialTxSenderBalance, txObj, withdrawAmount
 
-    before(async () => {
+    beforeEach(async () => {
       initialLockBalance = new BigNumber(
         await web3.eth.getBalance(lock.address)
       )
@@ -80,23 +86,35 @@ contract('Lock / cancelAndRefundFor', accounts => {
         }),
         keyOwners[0]
       )
-      txObj = await lock.cancelAndRefundFor(keyOwners[0], signature, {
-        from: txSender,
-      })
+      txObj = await lock.cancelAndRefundFor(
+        keyOwners[0],
+        signature.v,
+        signature.r,
+        signature.s,
+        {
+          from: txSender,
+        }
+      )
       withdrawAmount = new BigNumber(initialLockBalance).minus(
         await web3.eth.getBalance(lock.address)
       )
     })
 
     it('the amount of refund should be greater than 0', async () => {
-      const refund = new BigNumber(txObj.logs[0].args.refund)
-      assert(refund.gt(0))
-      assert.equal(refund.toFixed(), withdrawAmount.toFixed())
+      truffleAssert.eventEmitted(txObj, 'CancelKey', e => {
+        const refund = new BigNumber(e.refund)
+        return refund.gt(0) && refund.toFixed() === withdrawAmount.toFixed()
+      })
     })
 
     it('should make the key no longer valid (i.e. expired)', async () => {
       const isValid = await lock.getHasValidKey.call(keyOwners[0])
       assert.equal(isValid, false)
+    })
+
+    it('can read the non-zero nonce', async () => {
+      const nonce = new BigNumber(await lock.keyOwnerToNonce.call(keyOwners[0]))
+      assert.equal(nonce.toFixed(), 1)
     })
 
     it("should increase the sender's balance with the amount of funds withdrawn from the lock", async () => {
@@ -115,6 +133,12 @@ contract('Lock / cancelAndRefundFor', accounts => {
           .toFixed()
       )
     })
+
+    it('emits NonceChanged', async () => {
+      const e = txObj.receipt.logs.find(e => e.event === 'NonceChanged')
+      assert.equal(e.args.keyOwner, keyOwners[0])
+      assert.equal(e.args.nextAvailableNonce, '1')
+    })
   })
 
   describe('should fail when', () => {
@@ -127,11 +151,17 @@ contract('Lock / cancelAndRefundFor', accounts => {
         await lock.getCancelAndRefundApprovalHash(keyOwners[1], txSender),
         keyOwners[1]
       )
-      await lock.invalidateApprovalToCancelKey({ from: keyOwners[1] })
+      await lock.invalidateOffchainApproval('1', { from: keyOwners[1] })
       await shouldFail(
-        lock.cancelAndRefundFor(keyOwners[1], signature, {
-          from: txSender,
-        }),
+        lock.cancelAndRefundFor(
+          keyOwners[1],
+          signature.v,
+          signature.r,
+          signature.s,
+          {
+            from: txSender,
+          }
+        ),
         'INVALID_SIGNATURE'
       )
     })
@@ -141,17 +171,29 @@ contract('Lock / cancelAndRefundFor', accounts => {
         await lock.getCancelAndRefundApprovalHash(keyOwners[2], txSender),
         keyOwners[2]
       )
-      await lock.cancelAndRefundFor(keyOwners[2], signature, {
-        from: txSender,
-      })
-      await lock.purchase(keyOwners[2], web3.utils.padLeft(0, 40), [], {
+      await lock.cancelAndRefundFor(
+        keyOwners[2],
+        signature.v,
+        signature.r,
+        signature.s,
+        {
+          from: txSender,
+        }
+      )
+      await lock.purchase(0, keyOwners[2], web3.utils.padLeft(0, 40), [], {
         from: keyOwners[2],
         value: keyPrice.toFixed(),
       })
       await shouldFail(
-        lock.cancelAndRefundFor(keyOwners[2], signature, {
-          from: txSender,
-        }),
+        lock.cancelAndRefundFor(
+          keyOwners[2],
+          signature.v,
+          signature.r,
+          signature.s,
+          {
+            from: txSender,
+          }
+        ),
         'INVALID_SIGNATURE'
       )
     })
@@ -161,14 +203,20 @@ contract('Lock / cancelAndRefundFor', accounts => {
         await lock.getCancelAndRefundApprovalHash(keyOwners[3], txSender),
         keyOwners[3]
       )
-      signature =
-        signature.substr(0, 4) +
-        (signature[4] === '0' ? '1' : '0') +
-        signature.substr(5)
+      signature.r =
+        signature.r.substr(0, 4) +
+        (signature.r[4] === '0' ? '1' : '0') +
+        signature.r.substr(5)
       await shouldFail(
-        lock.cancelAndRefundFor(keyOwners[3], signature, {
-          from: txSender,
-        }),
+        lock.cancelAndRefundFor(
+          keyOwners[3],
+          signature.v,
+          signature.r,
+          signature.s,
+          {
+            from: txSender,
+          }
+        ),
         'INVALID_SIGNATURE'
       )
     })
@@ -186,9 +234,15 @@ contract('Lock / cancelAndRefundFor', accounts => {
         keyOwners[3]
       )
       await shouldFail(
-        lock.cancelAndRefundFor(keyOwners[3], signature, {
-          from: txSender,
-        }),
+        lock.cancelAndRefundFor(
+          keyOwners[3],
+          signature.v,
+          signature.r,
+          signature.s,
+          {
+            from: txSender,
+          }
+        ),
         ''
       )
     })
@@ -207,9 +261,15 @@ contract('Lock / cancelAndRefundFor', accounts => {
         keyOwners[3]
       )
       await shouldFail(
-        lock.cancelAndRefundFor(keyOwners[3], signature, {
-          from: txSender,
-        }),
+        lock.cancelAndRefundFor(
+          keyOwners[3],
+          signature.v,
+          signature.r,
+          signature.s,
+          {
+            from: txSender,
+          }
+        ),
         'KEY_NOT_VALID'
       )
     })

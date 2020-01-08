@@ -21,17 +21,24 @@ const Post = ({ slug, post }) => {
   let body = post.__content || ''
   let membersOnly = post.membersOnly || ''
   let nonMembersOnly = post.nonMembersOnly || ''
+  let scripts = post.scripts || []
   let permalink = '/blog/' + slug
+  let image = post.image
 
   return (
     <Layout forContent>
       <Head>
         <title>{pageTitle(title)}</title>
-        <TwitterTags title={pageTitle(title)} description={description} />
+        <TwitterTags
+          title={pageTitle(title)}
+          description={description}
+          image={image}
+        />
         <OpenGraphTags
           title={pageTitle(title)}
           description={description}
           canonicalPath={permalink}
+          image={image}
         />
         <link
           rel="alternate"
@@ -45,6 +52,7 @@ const Post = ({ slug, post }) => {
         publishDate={publishDate}
         title={title}
         subTitle={subTitle}
+        scripts={scripts}
         authorName={authorName}
         permalink={permalink}
         membersOnly={membersOnly}

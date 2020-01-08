@@ -1,20 +1,105 @@
 # Changes
 
+# 0.5.4
+
+- generateLockAddress on inputHandler as well
+
+# 0.5.3
+
+- Supports create2 in generateLockAddress
+
+# 0.5.2
+
+- Lets the user pass a network id when intantiating services
+
+# 0.5.1
+
+- Changed auto-gen files to reflect latest abi
+
+# 0.5.0
+
+- Support for smart contract v12 (version 5)
+- Deprecated the deploy script in favor of using walletService
+- Adding support for configureUnlock to support version 12
+- Adding support for deployTemplate to support version 12 which reduces gas costs when deploying new locks
+- Added type definitions for currently exported members
+
+# 0.4.2
+
+- Fixing issue with generateSignedEjectionRequest which did not yield the actual user address
+
+# 0.4.1
+
+- Adding a "latest" export which returns the latest supported lock version
+- Loosening the required node version to anything compatible with v10
+
+## 0.4.0
+
+- Only approving if the approved amount is lower than the required price
+- WalletService method which change state take a callback as argument which yields the transaction hash.
+- Not catching errors on transaction emitted. These should be caught by the applications
+- withdrawFromLock now returns a Promise of the withdrawn amount
+- purchaseKey now returns a Promise of the token id
+- createLock now returns a Promise of the deployed lock address
+- updateKeyPrice now uses the right decimals for erc20 contracts
+- getting erc20Address and decimals from the contract when purchasing a key
+- Removed the 'owner' param on createLock since it is not really used (just emitted back)
+- Refactored signature to accept objects to be more flexible (this is a breaking change)
+
+## 0.3.20
+
+- unlock-provider can generate a signed ejection request
+
+## 0.3.19
+
+- unlock-provider has a more consistent personal_sign output
+
+## 0.3.18
+
+- walletService dispatches personal_sign to unlock-provider
+
+## 0.3.17
+
+- unlock-provider can personal_sign data
+
+## 0.3.16
+
+- Using the right decimals number for ERC20 balances
+
+## 0.3.15
+
+- TODO cleanup in web3Service tests
+- Randomizing retries on error 419 (rate limiting)
+- Hanlding missing ERC20 methods
+
+## 0.3.14
+
+- Adding retries on error 419 (rate limiting)
+
+## 0.3.13
+
+- Returning the token symbol when retrieving an ERC20 lock.
+
 ## 0.3.12
+
 - fixed a difference between pending transactions (node knows about them) and submitted transactions (which may be transactions that have been cancelled and will never succeed)
 
 ## 0.3.11
+
 - add `getTokenSymbol` method to web3Service to identify arbitrary ERC20 tokens (#4481)
 - add `getTokenBalance` method to web3Service to get the user's balance of arbitrary ERC20 tokens (#4431)
 
 ## 0.3.10
+
 - Add "for" field for pending/submitted key purchase transactions (#4190)
 - ignore events from other contracts (erc20 for instance) (#4187)
 
 ## 0.3.9
+
 - If a transaction is unknown poll immediately for it (#4149)
 
 ## 0.3.8
+
 - Moved scrypt/N back to the default from Web3 for speed of account interaction
 
 ## 0.3.7

@@ -9,12 +9,7 @@ import {
 import configure from './config'
 
 // Reducers
-import keysReducer, {
-  initialState as defaultKeys,
-} from './reducers/keysReducer'
-import keysPagesReducer, {
-  initialState as defaultKeysPages,
-} from './reducers/keysPagesReducer'
+
 import loadingReducer, {
   initialState as defaultLoading,
 } from './reducers/loadingReducer'
@@ -45,12 +40,24 @@ import lockFormVisibilityReducer, {
 import fullScreenModalsReducer, {
   initialState as defaultFullScreenModalsStatus,
 } from './reducers/fullScreenModalsReducer'
-import privateKeyReducer, {
-  initialState as defaultPrivateKeyState,
-} from './reducers/privateKeyReducer'
+import userDetailsReducer, {
+  initialState as defaultUserDetails,
+} from './reducers/userDetails'
 import cartReducer, {
   initialState as defaultCartState,
 } from './reducers/cartReducer'
+import recoveryReducer, {
+  initialState as defaultRecoveryPhrase,
+} from './reducers/recoveryReducer'
+import pageStatusReducer, {
+  initialState as defaultPageStatus,
+} from './reducers/pageStatusReducer'
+import signatureReducer, {
+  initialState as defaultSignatureState,
+} from './reducers/signatureReducer'
+import metadataReducer, {
+  initialState as defaultMetadataState,
+} from './reducers/metadataReducer'
 
 const config = configure()
 
@@ -62,8 +69,6 @@ export const createUnlockStore = (
   const reducers = {
     router: routerReducer,
     account: accountReducer,
-    keys: keysReducer,
-    keysForLockByPage: keysPagesReducer,
     loading: loadingReducer,
     locks: locksReducer,
     network: networkReducer,
@@ -73,8 +78,12 @@ export const createUnlockStore = (
     errors: errorsReducer,
     lockFormStatus: lockFormVisibilityReducer,
     fullScreenModalStatus: fullScreenModalsReducer,
-    userDetails: privateKeyReducer,
+    userDetails: userDetailsReducer,
     cart: cartReducer,
+    recoveryPhrase: recoveryReducer,
+    pageIsLocked: pageStatusReducer,
+    signature: signatureReducer,
+    metadata: metadataReducer,
   }
 
   // Cleanup the defaultState to remove all null values so that we do not overwrite existing
@@ -89,8 +98,6 @@ export const createUnlockStore = (
     {
       router: initialRouterState(path),
       account: defaultAccount,
-      keys: defaultKeys,
-      keysForLockByPage: defaultKeysPages,
       loading: defaultLoading,
       locks: defaultLocks,
       network: defaultNetwork,
@@ -100,8 +107,12 @@ export const createUnlockStore = (
       errors: defaultError,
       lockFormStatus: defaultLockFormVisibility,
       fullScreenModalStatus: defaultFullScreenModalsStatus,
-      userDetails: defaultPrivateKeyState,
+      userDetails: defaultUserDetails,
+      recoveryPhrase: defaultRecoveryPhrase,
       cart: defaultCartState,
+      pageIsLocked: defaultPageStatus,
+      signature: defaultSignatureState,
+      metadata: defaultMetadataState,
     },
     {
       provider: Object.keys(config.providers)[0],

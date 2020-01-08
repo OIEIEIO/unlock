@@ -26,7 +26,8 @@ export default function configure(
   const httpProvider = runtimeConfig.httpProvider || '127.0.0.1'
   const unlockTicketsUrl =
     runtimeConfig.unlockTicketsUrl || 'http://0.0.0.0:3003'
-  let unlockAppUrl = 'http://0.0.0.0:3000'
+  let unlockAppUrl = runtimeConfig.unlockAppUrl || 'http://0.0.0.0:3000'
+  let unlockStaticUrl = runtimeConfig.unlockStaticUrl || 'http://0.0.0.0:3002'
   let providers = {}
   let isRequiredNetwork = () => false
   let requiredNetwork = 'Dev'
@@ -34,7 +35,8 @@ export default function configure(
   let requiredConfirmations = 12
   // Unlock address by default
   // Smart contract deployments yield the same address on a "clean" node as long as long as the migration script runs in the same order.
-  let unlockAddress = '0x885EF47c3439ADE0CB9b33a4D3c534C99964Db93'
+  // TODO: is this used?
+  let unlockAddress = '0x559247Ec8A8771E8C97cDd39b96b9255651E39C5'
   let services = {
     storage: {
       host: locksmithUri,
@@ -59,7 +61,7 @@ export default function configure(
     name: runtimeConfig.erc20ContractSymbol || 'DEV',
     address:
       runtimeConfig.erc20ContractAddress ||
-      '0x591AD9066603f5499d12fF4bC207e2f577448c46',
+      '0xFcD4FD1B4F3d5ceDdc19004579A5d7039295DBB9',
   }
 
   if (env === 'test') {
@@ -92,8 +94,6 @@ export default function configure(
 
     // rinkeby block time is roughly same as main net
     blockTime = 8000
-
-    unlockAppUrl = 'https://staging.unlock-protocol.com/'
   }
 
   if (env === 'prod') {
@@ -106,8 +106,6 @@ export default function configure(
 
     // See https://www.reddit.com/r/ethereum/comments/3c8v2i/what_is_the_expected_block_time/
     blockTime = 8000
-
-    unlockAppUrl = 'https://unlock-protocol.com/'
   }
 
   if (env === 'prod' || env === 'staging') {
@@ -135,5 +133,6 @@ export default function configure(
     unlockTicketsUrl,
     services,
     unlockAppUrl,
+    unlockStaticUrl,
   }
 }

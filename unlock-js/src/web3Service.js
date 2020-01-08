@@ -4,6 +4,11 @@ import TransactionTypes from './transactionTypes'
 import UnlockService from './unlockService'
 import FetchJsonProvider from './FetchJsonProvider'
 import { UNLIMITED_KEYS_COUNT, KEY_ID } from './constants'
+import {
+  getErc20TokenSymbol,
+  getErc20BalanceForAddress,
+  getErc20Decimals,
+} from './erc20'
 
 /**
  * This service reads data from the RPC endpoint.
@@ -15,10 +20,11 @@ export default class Web3Service extends UnlockService {
     unlockAddress,
     blockTime,
     requiredConfirmations,
+    network,
   }) {
     super({ unlockAddress })
 
-    this.setup(readOnlyProvider)
+    this.setup(readOnlyProvider, network)
     this.blockTime = blockTime
     this.requiredConfirmations = requiredConfirmations
 
@@ -59,7 +65,7 @@ export default class Web3Service extends UnlockService {
         })
         return this.emit('lock.updated', contractAddress, {
           asOf: blockNumber,
-          keyPrice: utils.fromWei(keyPrice, 'ether'),
+          keyPrice: utils.fromWei(keyPrice, 'ether'), // TODO: THIS MAY NOT BE WEI FOR ERC20 LOCKS
         })
       },
       Withdrawal: (transactionHash, contractAddress) => {
@@ -71,13 +77,15 @@ export default class Web3Service extends UnlockService {
     }
 
     this.inputsHandlers = {
-      createLock: async (transactionHash, contractAddress, params) => {
+      createLock: async (transactionHash, contractAddress, sender, params) => {
         // The annoying part here is that we do not have the lock address...
         // Since it is not an argument to the function.
         // We will 'guess' it again using generateLockAddress
         // knowing that this may create a race condition another lock creation pending transaction
         // exists.
-        const newLockAddress = await this.generateLockAddress()
+        const newLockAddress = await this.generateLockAddress(sender, {
+          name: params._lockName,
+        })
         this.emit('transaction.updated', transactionHash, {
           lock: newLockAddress,
         })
@@ -96,7 +104,7 @@ export default class Web3Service extends UnlockService {
           balance: '0', // Must be expressed in Eth!
         })
       },
-      purchaseFor: async (transactionHash, contractAddress, params) => {
+      purchaseFor: async (transactionHash, contractAddress, sender, params) => {
         const owner = params._recipient
         this.emit('transaction.updated', transactionHash, {
           key: KEY_ID(contractAddress, owner),
@@ -115,27 +123,75 @@ export default class Web3Service extends UnlockService {
    * Temporary function that allows us to use ethers functionality
    * without interfering with web3. This will be moved to the constructor when
    * we remove web3
+   * TODO: ^ assess this?
    */
-  setup(readOnlyProvider) {
+  setup(readOnlyProvider, network) {
     if (typeof readOnlyProvider === 'string') {
-      this.provider = new FetchJsonProvider(readOnlyProvider)
+      this.provider = new FetchJsonProvider({
+        endpoint: readOnlyProvider,
+        network,
+      })
     } else if (readOnlyProvider.send) {
       this.provider = new ethers.providers.Web3Provider(readOnlyProvider)
     }
   }
 
   /**
-   * "Guesses" what the next Lock's address is going to be
+   * Method which returns the create2 address based on the factory contract (unlock), the lock template,
+   * the account and lock salt (both used to create a unique salt)
+   * 0x3d602d80600a3d3981f3363d3d373d3d3d363d73 and 5af43d82803e903d91602b57fd5bf3 are the
+   * bytecode for eip-1167 (which defines proxies for locks).
+   * @private
    */
-  async generateLockAddress() {
-    let transactionCount = await this.provider.getTransactionCount(
-      this.unlockContractAddress
-    )
+  _create2Address(unlockAddress, templateAddress, account, lockSalt) {
+    const saltHex = `${account}${lockSalt}`
+    const byteCode = `0x3d602d80600a3d3981f3363d3d373d3d3d363d73${templateAddress.replace(
+      /0x/,
+      ''
+    )}5af43d82803e903d91602b57fd5bf3`
+    const byteCodeHash = utils.sha3(byteCode)
 
-    return ethers.utils.getContractAddress({
-      from: this.unlockContractAddress,
-      nonce: transactionCount,
-    })
+    const seed = ['ff', unlockAddress, saltHex, byteCodeHash]
+      .map(x => x.replace(/0x/, ''))
+      .join('')
+
+    let address = utils.sha3(`0x${seed}`).slice(-40)
+
+    return utils.toChecksumAddress(`0x${address}`)
+  }
+
+  /**
+   * "Guesses" what the next Lock's address is going to be
+   * Before v12 (5) we do not need the lock object
+   * After that, we do because create2 uses a salt which is used to know the address
+   * TODO : ideally this code should be part of ethers... but it looks like it's not there yet.
+   * For now, losely inspired by
+   * https://github.com/HardlyDifficult/hardlydifficult-ethereum-contracts/blob/master/src/utils/create2.js#L29
+   */
+  async generateLockAddress(owner, lock) {
+    const version = await this.unlockContractAbiVersion()
+    if (version.version === 'v12') {
+      const unlockContact = await this.getUnlockContract()
+      const templateAddress = await unlockContact.publicLockAddress()
+      // Compute the hash identically to v12 (TODO: extract this?)
+      const lockSalt = utils.sha3(utils.utf8ToHex(lock.name)).substring(2, 26) // 2+24
+      return this._create2Address(
+        this.unlockContractAddress,
+        templateAddress,
+        owner,
+        lockSalt
+      )
+    } else {
+      // TODO: once the contracts have been moved to v12, get rid of the code below as no lock will ever be deployed again from the old unlock contract!
+      let transactionCount = await this.provider.getTransactionCount(
+        this.unlockContractAddress
+      )
+
+      return ethers.utils.getContractAddress({
+        from: this.unlockContractAddress,
+        nonce: transactionCount,
+      })
+    }
   }
 
   /**
@@ -180,6 +236,8 @@ export default class Web3Service extends UnlockService {
 
     // if we reach here, the contract is PublicLock
     switch (method) {
+      case 'purchase':
+        return TransactionTypes.KEY_PURCHASE
       case 'purchaseFor':
         return TransactionTypes.KEY_PURCHASE
       case 'withdraw':
@@ -313,6 +371,7 @@ export default class Web3Service extends UnlockService {
     contract,
     data,
     contractAddress,
+    sender,
     status = 'pending'
   ) {
     const transactionType = this._getTransactionType(contract, data)
@@ -339,7 +398,7 @@ export default class Web3Service extends UnlockService {
     }, {})
 
     if (handler) {
-      return handler(transactionHash, contractAddress, args)
+      return handler(transactionHash, contractAddress, sender, args)
     }
   }
 
@@ -380,6 +439,7 @@ export default class Web3Service extends UnlockService {
         contract,
         defaults.input,
         defaults.to,
+        defaults.from,
         'submitted'
       )
     }
@@ -414,6 +474,7 @@ export default class Web3Service extends UnlockService {
       contract,
       blockTransaction.data,
       blockTransaction.to,
+      blockTransaction.from,
       'pending'
     )
   }
@@ -537,13 +598,17 @@ export default class Web3Service extends UnlockService {
    */
   async getLock(address) {
     const version = await this.lockContractAbiVersion(address)
-    return version.getLock.bind(this)(address)
+    const lock = version.getLock.bind(this)(address)
+    lock.address = address
+    return lock
   }
 
   /**
    * Returns the key to the lock by the account.
    * @param {PropTypes.string} lock
    * @param {PropTypes.string} owner
+   * TODO: return the tokenId here because this is probably useful in some context
+   * TODO: add a method to retrieve a token by its id
    */
   async getKeyByLockForOwner(lock, owner) {
     const lockContract = await this.getLockContract(lock)
@@ -585,7 +650,12 @@ export default class Web3Service extends UnlockService {
 
   _emitKeyOwners(lock, page, keyPromises) {
     return Promise.all(keyPromises).then(keys => {
-      this.emit('keys.page', lock, page, keys.filter(key => !!key))
+      this.emit(
+        'keys.page',
+        lock,
+        page,
+        keys.filter(key => !!key)
+      )
     })
   }
 
@@ -695,10 +765,7 @@ export default class Web3Service extends UnlockService {
    * @returns {Promise<string>}
    */
   async getTokenSymbol(contractAddress) {
-    const abi = ['function symbol() view returns (string)']
-    const contract = new ethers.Contract(contractAddress, abi, this.provider)
-    const symbolPromise = contract.symbol()
-
+    const symbolPromise = getErc20TokenSymbol(contractAddress, this.provider)
     this.emitTokenSymbol(contractAddress, symbolPromise)
     return symbolPromise
   }
@@ -723,13 +790,19 @@ export default class Web3Service extends UnlockService {
    * @returns {Promise<string>}
    */
   async getTokenBalance(contractAddress, userWalletAddress) {
-    const abi = ['function balanceOf(address owner) view returns (uint)']
-    const contract = new ethers.Contract(contractAddress, abi, this.provider)
+    let balance, decimals
+    let result
     try {
-      const rawBalance = await contract.balanceOf(userWalletAddress)
-      return ethers.utils.formatEther(rawBalance)
+      balance = await getErc20BalanceForAddress(
+        contractAddress,
+        userWalletAddress,
+        this.provider
+      )
+      decimals = await getErc20Decimals(contractAddress, this.provider)
+      result = utils.fromDecimal(balance, decimals)
     } catch (e) {
       this.emit('error', e)
     }
+    return result
   }
 }

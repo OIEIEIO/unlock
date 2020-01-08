@@ -6,6 +6,7 @@ import v01 from './v01'
 import v02 from './v02'
 import v10 from './v10'
 import v11 from './v11'
+import v12 from './v12'
 
 import FastJsonRpcSigner from './FastJsonRpcSigner'
 
@@ -29,7 +30,6 @@ export default class UnlockService extends EventEmitter {
     this.unlockContractAddress = unlockAddress
     this.web3 = null
     this.provider = null
-    /* Memoization for opCode per address */
     // Used to cache
     this.versionForAddress = {}
     this.unlockContract = null
@@ -71,6 +71,10 @@ export default class UnlockService extends EventEmitter {
 
     if (4 === version) {
       return v11
+    }
+
+    if (5 === version) {
+      return v12
     }
 
     // Defaults to v0
@@ -137,6 +141,15 @@ export default class UnlockService extends EventEmitter {
       version = parseInt(contractVersion, 10) || 0
     } catch (error) {
       // This is an older version of Unlock which did not support unlockVersion
+      // It can be either v0 or v01. To distinguish let's use their opcode!
+      const opCode = await this.provider.getCode(address)
+      const hash = ethers.utils.sha256(opCode)
+      if (
+        hash ===
+        '0x886b9da11c0a665e98fd914bc79908925a4f6a549286de92ee6825e441a26309'
+      ) {
+        version = 1
+      }
     }
     return version
   }

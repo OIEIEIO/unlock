@@ -2,10 +2,13 @@ import { KeyMetadata } from '../models/keyMetadata'
 import { LockMetadata } from '../models/lockMetadata'
 import Metadata from '../../config/metadata'
 import KeyData from '../utils/keyData'
+import { getMetadata } from './userMetadataOperations'
 
 const env = process.env.NODE_ENV || 'development'
 const config = require('../../config/config')[env]
 const Asset = require('../utils/assets')
+
+let baseURIFragement = 'https://assets.unlock-protocol.com'
 
 export const updateKeyMetadata = async (data: any) => {
   try {
@@ -25,24 +28,41 @@ export const updateDefaultLockMetadata = async (data: any) => {
   }
 }
 
-export const generateKeyMetadata = async (address: string, keyId: string) => {
+export const generateKeyMetadata = async (
+  address: string,
+  keyId: string,
+  isLockOwner: boolean,
+  host: string
+) => {
   let onChainKeyMetadata = await fetchChainData(address, keyId)
   if (Object.keys(onChainKeyMetadata).length == 0) {
     return {}
   }
+
+  let kd = new KeyData(config.web3ProviderHost)
+  let data = await kd.get(address, keyId)
+  let userMetadata = data.owner
+    ? await getMetadata(address, data.owner, isLockOwner)
+    : {}
+
   let keyCentricData = await getKeyCentricData(address, keyId)
-  let baseTokenData = await getBaseTokenData(address)
-  return Object.assign(baseTokenData, keyCentricData, onChainKeyMetadata)
+  let baseTokenData = await getBaseTokenData(address, host)
+  return Object.assign(
+    baseTokenData,
+    keyCentricData,
+    onChainKeyMetadata,
+    userMetadata
+  )
 }
 
-const getBaseTokenData = async (address: string) => {
-  let defaultResponse = defaultMappings(address)
+const getBaseTokenData = async (address: string, host: string) => {
+  let defaultResponse = defaultMappings(address, host)
   let persistedBasedMetadata = await LockMetadata.findOne({
     where: { address: address },
   })
 
   let assetLocation = Asset.tokenMetadataDefaultImage({
-    base: 'https://assets.unlock-protocol.com',
+    base: baseURIFragement,
     address: address,
   })
 
@@ -57,7 +77,10 @@ const getBaseTokenData = async (address: string) => {
   return result
 }
 
-const getKeyCentricData = async (address: string, tokenId: string) => {
+const getKeyCentricData = async (
+  address: string,
+  tokenId: string
+): Promise<any> => {
   let keyCentricData: any = await KeyMetadata.findOne({
     where: {
       address: address,
@@ -66,7 +89,7 @@ const getKeyCentricData = async (address: string, tokenId: string) => {
   })
 
   let assetLocation = Asset.tokenCentricImage({
-    base: 'https://assets.unlock-protocol.com',
+    base: baseURIFragement,
     address: address,
     tokenId: tokenId,
   })
@@ -80,17 +103,17 @@ const getKeyCentricData = async (address: string, tokenId: string) => {
   return result
 }
 
-const fetchChainData = async (address: string, keyId: string) => {
+const fetchChainData = async (address: string, keyId: string): Promise<any> => {
   let kd = new KeyData(config.web3ProviderHost)
   let data = await kd.get(address, keyId)
   return kd.openSeaPresentation(data)
 }
 
-const defaultMappings = (address: string) => {
+const defaultMappings = (address: string, host: string) => {
   let defaultResponse = {
     name: 'Unlock Key',
     description: 'A Key to an Unlock lock.',
-    image: 'https://assets.unlock-protocol.com/unlock-default-key-image.png',
+    image: `${host}/lock/${address}/icon`,
   }
 
   // Custom mappings

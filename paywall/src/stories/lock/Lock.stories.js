@@ -31,7 +31,6 @@ const lock = {
   address: '0x123',
   name: 'Monthly',
   keyPrice: '0.23',
-  fiatPrice: 240.38,
   expirationDuration: 2592000,
 }
 
@@ -39,7 +38,6 @@ const lockWithLongName = {
   address: '0x123',
   name: 'Hitting406 Crypto Category',
   keyPrice: '0.23',
-  fiatPrice: 240.38,
   expirationDuration: 2592000,
 }
 
@@ -52,6 +50,14 @@ const ConfigProvider = ConfigContext.Provider
 const WindowProvider = WindowContext.Provider
 
 const storyConfig = configure()
+
+const accountWithBalance = {
+  balance: {
+    eth: '9001',
+    '0x123ERC20': '9001',
+    [storyConfig.erc20Contract.address]: '9001',
+  },
+}
 
 storiesOf('Lock', module)
   .addDecorator(getStory => (
@@ -90,6 +96,7 @@ storiesOf('Lock', module)
     }
     return (
       <Lock
+        account={accountWithBalance}
         lock={erc20Lock}
         transaction={null}
         lockKey={null}
@@ -109,6 +116,7 @@ storiesOf('Lock', module)
     }
     return (
       <Lock
+        account={accountWithBalance}
         lock={erc20Lock}
         transaction={null}
         lockKey={null}
@@ -123,11 +131,11 @@ storiesOf('Lock', module)
       address: '0x123',
       name: 'Monthly',
       keyPrice: '0.23',
-      fiatPrice: 240.38,
       expirationDuration: 5 * 60, // 5 minutes
     }
     return (
       <Lock
+        account={accountWithBalance}
         lock={shortLock}
         transaction={null}
         lockKey={null}
@@ -140,6 +148,7 @@ storiesOf('Lock', module)
   .add('with no key (check hover state too)', () => {
     return (
       <Lock
+        account={accountWithBalance}
         lock={lock}
         transaction={null}
         lockKey={null}
@@ -152,6 +161,7 @@ storiesOf('Lock', module)
   .add('with very long name', () => {
     return (
       <Lock
+        account={accountWithBalance}
         lock={lockWithLongName}
         transaction={null}
         lockKey={null}
@@ -164,6 +174,7 @@ storiesOf('Lock', module)
   .add('disabled - another lock has a pending key', () => {
     return (
       <Lock
+        account={accountWithBalance}
         disabled
         lock={lock}
         transaction={null}
@@ -245,6 +256,7 @@ storiesOf('Lock', module)
       const accountWithNotEnoughEth = {
         balance: {
           eth: '0',
+          [storyConfig.erc20Contract.address]: '75',
         },
         name: 'julien',
       }
@@ -412,12 +424,12 @@ storiesOf('Lock', module)
       address: '0x123',
       name: 'Monthly',
       keyPrice: '0.23',
-      fiatPrice: 240.38,
       expirationDuration: 2592000,
       balance: '5',
     }
     return (
       <Lock
+        account={accountWithBalance}
         lock={lockWithBalance}
         transaction={null}
         lockKey={null}
@@ -435,6 +447,7 @@ storiesOf('Lock', module)
     )
     return (
       <Lock
+        account={accountWithBalance}
         lock={lockWithInfiniteNumberOfKeys}
         transaction={null}
         lockKey={null}

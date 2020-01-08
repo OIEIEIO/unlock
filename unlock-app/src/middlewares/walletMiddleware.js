@@ -9,16 +9,15 @@ import {
   UPDATE_LOCK_KEY_PRICE,
   updateLock,
 } from '../actions/lock'
-import { PURCHASE_KEY } from '../actions/key'
 import { setAccount, updateAccount } from '../actions/accounts'
 import { setNetwork } from '../actions/network'
 import { setError } from '../actions/error'
 import { PROVIDER_READY } from '../actions/provider'
 import { newTransaction } from '../actions/transaction'
 import { waitForWallet, dismissWalletCheck } from '../actions/fullScreenModals'
-import { POLLING_INTERVAL, ETHEREUM_NETWORKS_NAMES } from '../constants'
+import { ACCOUNT_POLLING_INTERVAL, ETHEREUM_NETWORKS_NAMES } from '../constants'
 
-import { Application, Transaction } from '../utils/Error'
+import { Application, Transaction, Wallet } from '../utils/Error'
 
 import {
   FATAL_NO_USER_ACCOUNT,
@@ -27,8 +26,14 @@ import {
 } from '../errors'
 import { TransactionType } from '../unlockTypes'
 import { hideForm } from '../actions/lockFormVisibility'
-import { transactionTypeMapping } from '../utils/types' // TODO change POLLING_INTERVAL into ACCOUNT_POLLING_INTERVAL
+import { transactionTypeMapping } from '../utils/types'
 import { getStoredPaymentDetails } from '../actions/user'
+import { SIGN_DATA, signedData } from '../actions/signature'
+import {
+  SIGN_BULK_METADATA_REQUEST,
+  signBulkMetadataResponse,
+} from '../actions/keyMetadata'
+import generateKeyTypedData from '../structured_data/keyMetadataTypedData'
 
 // This middleware listen to redux events and invokes the walletService API.
 // It also listen to events from walletService and dispatches corresponding actions
@@ -75,7 +80,10 @@ const walletMiddleware = config => {
     walletService.on('account.changed', account => {
       if (config.isServer) return
       // Let's poll to detect account changes
-      setTimeout(walletService.getAccount.bind(walletService), POLLING_INTERVAL)
+      setTimeout(
+        walletService.getAccount.bind(walletService),
+        ACCOUNT_POLLING_INTERVAL
+      )
 
       // If the account is actually different
       if (!getState().account || getState().account.address !== account) {
@@ -188,35 +196,73 @@ const walletMiddleware = config => {
           walletService.connect(config.providers[getState().provider])
         } else if (action.type === CREATE_LOCK && action.lock.address) {
           ensureReadyBefore(() => {
-            walletService.createLock(action.lock, getState().account.address)
-          })
-        } else if (action.type === PURCHASE_KEY) {
-          ensureReadyBefore(() => {
-            const account = getState().account
-            // find the lock to get its keyPrice
-            const lock = Object.values(getState().locks).find(
-              lock => lock.address === action.key.lock
-            )
-            walletService.purchaseKey(
-              action.key.lock,
-              action.key.owner,
-              lock.keyPrice,
-              account.address,
-              action.key.data
-            )
+            walletService.createLock({
+              expirationDuration: action.lock.expirationDuration,
+              keyPrice: action.lock.keyPrice,
+              maxNumberOfKeys: action.lock.maxNumberOfKeys,
+              owner: action.lock.owner,
+              name: action.lock.name,
+              currencyContractAddress: action.lock.currencyContractAddress,
+            })
           })
         } else if (action.type === WITHDRAW_FROM_LOCK) {
           ensureReadyBefore(() => {
-            walletService.withdrawFromLock(action.lock.address)
+            walletService.withdrawFromLock({
+              lockAddress: action.lock.address,
+            })
           })
         } else if (action.type === UPDATE_LOCK_KEY_PRICE) {
           ensureReadyBefore(() => {
-            const account = getState().account
-            walletService.updateKeyPrice(
-              action.address,
-              account.address,
-              action.price
-            )
+            walletService.updateKeyPrice({
+              lockAddress: action.address,
+              keyPrice: action.price,
+            })
+          })
+        } else if (action.type === SIGN_DATA) {
+          const { data, id } = action
+          walletService.signDataPersonal(
+            '', // account address -- unused in walletService
+            data,
+            (error, signature) => {
+              if (error) {
+                dispatch(
+                  setError(Wallet.Warning('Could not sign identity data.'))
+                )
+              } else {
+                dispatch(signedData(data, id, signature))
+              }
+            }
+          )
+        } else if (action.type === SIGN_BULK_METADATA_REQUEST) {
+          const { lockAddress, owner, timestamp } = action
+
+          // Usage from locksmith tests for metadataController
+          const typedData = generateKeyTypedData({
+            LockMetaData: {
+              // used alias to indicate that the `address` field is a lock address.
+              address: lockAddress,
+              owner,
+              timestamp,
+            },
+          })
+
+          dispatch(waitForWallet())
+
+          walletService.signData(owner, typedData, (error, signature) => {
+            if (error) {
+              dispatch(
+                setError(
+                  Wallet.Warning(
+                    'Could not sign typed data for metadata request.'
+                  )
+                )
+              )
+            } else {
+              dispatch(dismissWalletCheck())
+              dispatch(
+                signBulkMetadataResponse(typedData, signature, lockAddress)
+              )
+            }
           })
         }
 

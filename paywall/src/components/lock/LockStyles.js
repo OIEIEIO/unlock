@@ -7,6 +7,7 @@ export const LockWrapper = styled.li.attrs(props => ({
 }))`
   display: grid;
   justify-items: stretch;
+  justify-self: center;
   margin: 0px;
   padding: 0px;
   font-family: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
@@ -14,6 +15,7 @@ export const LockWrapper = styled.li.attrs(props => ({
   grid-gap: 8px;
   background-clip: padding-box;
   grid-template-rows: 1fr 140px;
+  margin: auto;
 `
 
 export const LockHeader = styled.header`
@@ -26,7 +28,7 @@ export const LockHeader = styled.header`
   min-height: 40px;
   border-radius: 4px 4px 0px 0px;
   padding: 0px;
-  color: var(--grey);
+  color: var(--mediumgrey);
 `
 
 export const LockFooter = styled.footer`
@@ -83,12 +85,18 @@ export const LockDetails = styled.div`
   font-size: 15px;
   grid-auto-columns: min-content;
   grid-auto-flow: column;
-  color: var(--grey);
+  color: var(--mediumgrey);
   font-weight: 300;
   grid-gap: 4px;
   align-self: center;
   justify-items: center;
   align-content: center;
+`
+
+export const ExpirationDuration = styled.span`
+  font-size: 20px;
+  font-weight: 300;
+  color: var(--mediumgrey);
 `
 
 export const LockName = styled(LockDetail)`

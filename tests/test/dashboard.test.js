@@ -9,6 +9,13 @@ describe('The Unlock Dashboard', () => {
     await wait.forLoadingDone()
   })
 
+  it('should show a modal for terms of service', async () => {
+    expect.assertions(1)
+    await expect(page).toClick('button', {
+      text: 'I agree',
+    })
+  })
+
   it('should load the creator dashboard', async () => {
     expect.assertions(1)
     await expect(page).toMatch('Creator Dashboard')
@@ -78,10 +85,18 @@ describe('The Unlock Dashboard', () => {
         return !existingLocks.includes(lock)
       })
 
+      // Let's wait for the lock to at least be not "Submitted" anymore
       await wait.untilIsTrue(address => {
         return !!document
           .querySelector(`[data-address="${address}"]`)
-          .innerText.match(/Confirming|Submitted/)
+          .innerText.match(/Confirming/)
+      }, newLock)
+
+      // We should wait for all the lock info to be loaded here (no more -)
+      await wait.untilIsTrue(address => {
+        return !document
+          .querySelector(`[data-address="${address}"]`)
+          .innerText.match('-')
       }, newLock)
 
       // Get the locks' innerText

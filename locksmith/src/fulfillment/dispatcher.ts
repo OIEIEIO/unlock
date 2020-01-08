@@ -1,6 +1,6 @@
 import { WalletService, Web3Service } from '@unlock-protocol/unlock-js'
 
-const HDWalletProvider = require('truffle-hdwallet-provider')
+const HDWalletProvider = require('@truffle/hdwallet-provider')
 const {
   findOrCreateTransaction,
 } = require('../operations/transactionOperations')
@@ -45,26 +45,37 @@ export default class Dispatcher {
       throw new Error('No Available Keys.')
     }
 
-    walletService.on(
-      'transaction.new',
-      async (
-        transactionHash: string,
-        sender: string,
-        recipient: string,
-        data: string
-      ) => {
-        await findOrCreateTransaction({
-          transactionHash: transactionHash,
-          sender: sender,
-          recipient: recipient,
-          chain: walletService.networkId,
-          for: this.buyer,
-          data: data,
-        })
-      }
-    )
+    const txHashPromise = new Promise(resolve => {
+      // TODO: do not rely on 'transaction.new' event (as future versions of unlockjs may not be an event emitter anymore, but on the optional callback to purchaseKey. Unfortunately, that callback only includes the transaction hash for now. We will need unlock-js to yield the sender, recipient and data too)
+      walletService.on(
+        'transaction.new',
+        async (
+          transactionHash: string,
+          sender: string,
+          recipient: string,
+          data: string
+        ) => {
+          await findOrCreateTransaction({
+            transactionHash: transactionHash,
+            sender: sender,
+            recipient: recipient,
+            chain: walletService.networkId,
+            for: this.buyer,
+            data: data,
+          })
+
+          resolve(transactionHash)
+        }
+      )
+    })
 
     await walletService.connect(this.provider)
-    await walletService.purchaseKey(lockAddress, recipient, '0', this.buyer)
+    // Let's not await on the transaction to be mined
+    walletService.purchaseKey({
+      lockAddress,
+      owner: recipient,
+      keyPrice: lock.keyPrice,
+    })
+    return txHashPromise
   }
 }

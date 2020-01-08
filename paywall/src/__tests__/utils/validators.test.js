@@ -157,6 +157,17 @@ describe('Form field validators', () => {
         ).toBe(false)
       })
 
+      it('should fail when metadataInputs is present but invalid', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidPaywallConfig({
+            ...validConfig,
+            metadataInputs: {},
+          })
+        ).toBeFalsy()
+      })
+
       it('icon', () => {
         expect.assertions(3)
 
@@ -498,21 +509,6 @@ describe('Form field validators', () => {
           ).toBe(false)
         })
 
-        it('lock has no name', () => {
-          expect.assertions(1)
-
-          expect(
-            validators.isValidPaywallConfig({
-              ...validConfig,
-              locks: {
-                [lock]: {
-                  whatthe: 'hey?',
-                },
-              },
-            })
-          ).toBe(false)
-        })
-
         it('lock name is not a string', () => {
           expect.assertions(4)
 
@@ -784,6 +780,60 @@ describe('Form field validators', () => {
           })
         ).toBe(true)
       })
+    })
+
+    it('is valid when lock has no name', () => {
+      expect.assertions(1)
+
+      expect(
+        validators.isValidPaywallConfig({
+          ...validConfig,
+          locks: {
+            [lock]: {
+              whatthe: 'hey?',
+            },
+          },
+        })
+      ).toBe(true)
+    })
+
+    it('is valid when lock name is an empty string', () => {
+      expect.assertions(1)
+
+      expect(
+        validators.isValidPaywallConfig({
+          ...validConfig,
+          locks: {
+            [lock]: {
+              name: '',
+            },
+          },
+        })
+      ).toBe(true)
+    })
+
+    it('is valid when metadataInputs is present and valid', () => {
+      expect.assertions(1)
+
+      const metadataInputs = [
+        {
+          name: 'Name',
+          type: 'text',
+          required: true,
+        },
+        {
+          name: 'Birthday',
+          type: 'date',
+          required: false,
+        },
+      ]
+
+      expect(
+        validators.isValidPaywallConfig({
+          ...validConfig,
+          metadataInputs,
+        })
+      ).toBeTruthy()
     })
   })
 
@@ -1349,6 +1399,147 @@ describe('Form field validators', () => {
           },
         })
       ).toBe(true)
+    })
+  })
+
+  describe('isValidMetadataField', () => {
+    const name = 'field name'
+    const validType = 'date'
+    const invalidType = 'genome-sequence'
+
+    describe('failures', () => {
+      it('should be false if the name is missing', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            type: validType,
+            required: false,
+          })
+        ).toBeFalsy()
+      })
+
+      it('should be false if the name is not a string', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name: 7,
+            type: validType,
+            required: true,
+          })
+        ).toBeFalsy()
+      })
+
+      it('should be false if the type is missing', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name,
+            required: true,
+          })
+        ).toBeFalsy()
+      })
+
+      it('should be false if the type is incorrect', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name,
+            type: invalidType,
+            required: true,
+          })
+        ).toBeFalsy()
+      })
+
+      it('should be false if the required property is missing', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name,
+            type: validType,
+          })
+        ).toBeFalsy()
+      })
+
+      it('should be false if the required property is not a boolean', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name,
+            type: validType,
+            required: 7,
+          })
+        ).toBeFalsy()
+      })
+    })
+
+    describe('successes', () => {
+      it('should be true for a valid field input', () => {
+        expect.assertions(1)
+
+        expect(
+          validators.isValidMetadataField({
+            name,
+            type: validType,
+            required: true,
+          })
+        ).toBeTruthy()
+      })
+    })
+  })
+
+  describe('isValidMetadataArray', () => {
+    describe('failures', () => {
+      it('should be false if input is not an array', () => {
+        expect.assertions(1)
+
+        expect(validators.isValidMetadataArray(7)).toBeFalsy()
+      })
+
+      it('should be false if input contains invalid metadata fields', () => {
+        expect.assertions(1)
+
+        const fields = [
+          {
+            name: 'Jeff',
+            type: 'person',
+            required: 7,
+          },
+        ]
+
+        expect(validators.isValidMetadataArray(fields)).toBeFalsy()
+      })
+    })
+
+    describe('successes', () => {
+      it('should be true if all fields are valid', () => {
+        expect.assertions(1)
+
+        const fields = [
+          {
+            name: 'Name',
+            type: 'text',
+            required: true,
+          },
+          {
+            name: 'Email',
+            type: 'email',
+            required: true,
+          },
+          {
+            name: 'Birthday',
+            type: 'date',
+            required: false,
+          },
+        ]
+
+        expect(validators.isValidMetadataArray(fields)).toBeTruthy()
+      })
     })
   })
 })

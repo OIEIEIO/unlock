@@ -6,8 +6,14 @@ import Header from './Header'
 import Footer from './Footer'
 import { RoundedLogo } from './Logo'
 import Media from '../../theme/media'
+import { styles } from './modal-templates'
+import { MessageBox } from './modal-templates/styles'
+import { ActionButton } from './buttons/ActionButton'
+import withConfig from '../../utils/withConfig'
+import useTermsOfService from '../../hooks/useTermsOfService'
 
 export default function Layout({ forContent, title, children }) {
+  const [tosAccepted, setTosAccepted] = useTermsOfService()
   return (
     <Container>
       <Left>
@@ -21,6 +27,7 @@ export default function Layout({ forContent, title, children }) {
       </Left>
       <Content>
         <Header forContent={forContent} title={title} />
+        {!tosAccepted && <Terms setTosAccepted={setTosAccepted} />}
         {children}
         {forContent && <Footer />}
       </Content>
@@ -41,6 +48,31 @@ Layout.defaultProps = {
   forContent: false,
 }
 
+const Terms = withConfig(({ setTosAccepted, config }) => {
+  return (
+    <styles.Greyout>
+      <TermsModal>
+        <Message>
+          No account required{' '}
+          <span role="img" aria-label="stars">
+            ✨
+          </span>
+          , but you need to agree to our{' '}
+          <Link href={`${config.unlockStaticUrl}/terms`}>
+            <a>Terms of Service</a>
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy">
+            <a>Privacy Policy</a>
+          </Link>
+          .
+        </Message>
+        <TosButton onClick={() => setTosAccepted(true)}>I agree</TosButton>
+      </TermsModal>
+    </styles.Greyout>
+  )
+})
+
 const Container = styled.div`
   display: grid;
   grid-template-columns: 1fr minmax(280px, 4fr) 1fr;
@@ -49,6 +81,22 @@ const Container = styled.div`
     padding-left: 6px;
     padding-right: 6px;
   `};
+`
+
+const TermsModal = styled(MessageBox)`
+  padding: 16px;
+  display: grid;
+  grid-gap: 16px;
+  ${Media.nophone`
+    grid-template-columns: 1fr 120px;
+  `}
+  ${Media.phone`
+    grid-template-columns: 1fr;
+  `}
+`
+
+const TosButton = styled(ActionButton)`
+  padding: 10px;
 `
 
 const Left = styled.div`
@@ -72,4 +120,9 @@ const Content = styled.div`
   display: grid;
   row-gap: 24px;
   width: 100%;
+`
+
+const Message = styled.p`
+  margin: 0px;
+  font-size: 16px;
 `

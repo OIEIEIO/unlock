@@ -1,12 +1,7 @@
 import React from 'react'
 import { connect } from 'react-redux'
 import { KindOfModal, Dispatch } from '../../unlockTypes' // eslint-disable-line
-import {
-  WalletCheck,
-  styles,
-  PasswordPrompt,
-  ResetPasswordPrompt,
-} from './modal-templates'
+import { WalletCheck, styles } from './modal-templates'
 
 interface Props {
   active: boolean
@@ -14,22 +9,12 @@ interface Props {
   dispatch: Dispatch
 }
 
+const templates = {
+  [KindOfModal.WalletCheckOverlay]: WalletCheck,
+}
+
 export const FullScreenModal = ({ active, kindOfModal, dispatch }: Props) => {
-  let Template: React.ComponentType<any>
-  switch (kindOfModal) {
-    case KindOfModal.WalletCheckOverlay:
-      Template = WalletCheck
-      break
-    case KindOfModal.PasswordPrompt:
-      Template = PasswordPrompt
-      break
-    case KindOfModal.ResetPasswordPrompt:
-      Template = ResetPasswordPrompt
-      break
-    default:
-      // We were given a KindOfModal that we don't have a template for. Do nothing.
-      return null
-  }
+  let Template = templates[kindOfModal]
 
   if (active) {
     // render a modal

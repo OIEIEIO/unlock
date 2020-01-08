@@ -1,13 +1,17 @@
 import axios from 'axios'
 
-/* eslint-disable no-unused-vars */
 export enum emailTemplate {
   signupConfirmation = 'confirmEmail',
+  welcome = 'welcome',
+  keyOwnership = 'keyOwnership',
 }
-/* eslint-enable no-unused-vars */
 
 type Params = {
   [key: string]: any
+}
+
+type Attachment = {
+  path: string
 }
 
 export default class WedlockService {
@@ -20,12 +24,14 @@ export default class WedlockService {
   sendEmail = (
     template: emailTemplate,
     recipient: string,
-    params: Params = {}
+    params: Params = {},
+    attachments: Attachment[] = []
   ) => {
     const payload = {
       template,
       recipient,
       params,
+      attachments,
     }
     const result = axios.post(this.uri, payload, {
       headers: {
@@ -45,5 +51,29 @@ export default class WedlockService {
       },
       confirmLink,
     })
+  }
+
+  welcomeEmail = (recipient: string, recoveryLink: string) => {
+    return this.sendEmail(emailTemplate.welcome, recipient, {
+      email: encodeURIComponent(recipient),
+      recoveryLink: recoveryLink,
+    })
+  }
+
+  keychainQREmail = (
+    recipient: string,
+    keychainLink: string,
+    lockName: string,
+    keyQR: string
+  ) => {
+    return this.sendEmail(
+      emailTemplate.keyOwnership,
+      recipient,
+      {
+        keychainLink,
+        lockName,
+      },
+      [{ path: keyQR }]
+    )
   }
 }

@@ -15,7 +15,7 @@ import {
   Step,
   Fieldset,
   Field,
-  Title,
+  CreateTitle,
   Label,
   StyledSelect,
   Text,
@@ -56,7 +56,7 @@ export class CreateContent extends Component {
             </Head>
             <Steps>
               <Step>
-                <Title>Select your Lock</Title>
+                <CreateTitle>Select your Lock</CreateTitle>
                 <Fieldset>
                   <Field>
                     <Label>Lock</Label>
@@ -78,7 +78,7 @@ export class CreateContent extends Component {
                     <Label>&nbsp;</Label>
                     <Text>
                       Don’t have a lock? <br />
-                      <Cta href={config.unlockAppUrl} target="_blank">
+                      <Cta href={config.unlockStaticUrl} target="_blank">
                         Create a new lock on unlock-protocol.com
                       </Cta>
                     </Text>
@@ -138,8 +138,5 @@ export const mapDispatchToProps = dispatch => ({
 })
 
 export default withConfig(
-  connect(
-    mapStateToProps,
-    mapDispatchToProps
-  )(CreateContent)
+  connect(mapStateToProps, mapDispatchToProps)(CreateContent)
 )

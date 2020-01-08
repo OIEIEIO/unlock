@@ -1,5 +1,5 @@
 import React from 'react'
-import * as rtl from 'react-testing-library'
+import * as rtl from '@testing-library/react'
 import configure from '../../../config'
 import { ConfigContext } from '../../../utils/withConfig'
 import Lock from '../../../components/lock/Lock'
@@ -17,7 +17,6 @@ describe('Lock', () => {
       address: '0xaaaaaaaaa0c4d48d1bdad5dcb26153fc8780f83e',
       name: 'Monthly',
       keyPrice: '0.23',
-      fiatPrice: 240.38,
       expirationDuration: 2592000,
     }
 

@@ -19,114 +19,100 @@ contract('Lock / transferFee', accounts => {
     // TODO test using an ERC20 priced lock as well
     locks = await deployLocks(unlock, accounts[0])
     lock = locks['FIRST']
-    await lock.purchase(keyOwner, web3.utils.padLeft(0, 40), [], {
+    await lock.purchase(0, keyOwner, web3.utils.padLeft(0, 40), [], {
       value: keyPrice.toFixed(),
     })
   })
 
   it('has a default fee of 0%', async () => {
-    const feeNumerator = new BigNumber(await lock.transferFeeNumerator.call())
-    const feeDenominator = new BigNumber(
-      await lock.transferFeeDenominator.call()
-    )
+    const feeNumerator = new BigNumber(await lock.transferFeeBasisPoints.call())
+    const feeDenominator = new BigNumber(await lock.BASIS_POINTS_DEN.call())
     assert.equal(feeNumerator.div(feeDenominator).toFixed(), 0.0)
   })
 
   describe('once a fee of 5% is set', () => {
+    let fee, fee1, fee2, fee3
     before(async () => {
-      // Change the fee to 0.05%
-      await lock.updateTransferFee(5, 100)
+      // Change the fee to 5%
+      await lock.updateTransferFee(500)
     })
 
-    it('estimates the transfer fee, which is 5% of keyPrice or less', async () => {
-      const fee = new BigNumber(await lock.getTransferFee.call(keyOwner))
-      assert(fee.lte(keyPrice.times(0.05)))
+    it('estimates the transfer fee, which is 5% of remaining duration or less', async () => {
+      const nowBefore = (await web3.eth.getBlock('latest')).timestamp
+      fee = new BigNumber(await lock.getTransferFee.call(keyOwner, 0))
+      // Mine a transaction in order to ensure the block.timestamp has updated
+      await lock.purchase(0, accounts[8], web3.utils.padLeft(0, 40), [], {
+        value: keyPrice.toFixed(),
+      })
+      const nowAfter = (await web3.eth.getBlock('latest')).timestamp
+      let expiration = new BigNumber(
+        await lock.keyExpirationTimestampFor.call(keyOwner)
+      )
+      // Fee is <= the expected fee before the call
+      assert(
+        fee.lte(
+          expiration
+            .minus(nowBefore)
+            .times(0.05)
+            .dp(0, BigNumber.ROUND_DOWN)
+        )
+      )
+      // and >= the expected fee after the call
+      assert(
+        fee.gte(
+          expiration
+            .minus(nowAfter)
+            .times(0.05)
+            .dp(0, BigNumber.ROUND_DOWN)
+        )
+      )
+    })
+
+    it('calculates the fee based on the time value passed in', async () => {
+      fee1 = await lock.getTransferFee.call(keyOwner, 100)
+      fee2 = await lock.getTransferFee.call(keyOwner, 60 * 60 * 24 * 365)
+      fee3 = await lock.getTransferFee.call(keyOwner, 60 * 60 * 24 * 30)
+      assert.equal(fee1, 5)
+      assert.equal(fee2, 1576800)
+      assert.equal(fee3, 129600)
     })
 
     describe('when the key is transfered', () => {
       const newOwner = accounts[2]
+      let tokenId, expirationBefore, expirationAfter, fee
 
-      it('should fail if the fee is not included', async () => {
-        await shouldFail(
-          lock.transferFrom(
-            keyOwner,
-            newOwner,
-            await lock.getTokenIdFor.call(keyOwner),
-            {
-              from: keyOwner,
-            }
-          )
+      before(async () => {
+        tokenId = await lock.getTokenIdFor.call(keyOwner)
+        expirationBefore = new BigNumber(
+          await lock.keyExpirationTimestampFor(keyOwner)
+        )
+        fee = await lock.getTransferFee(keyOwner, 0)
+        await lock.transferFrom(keyOwner, newOwner, tokenId, {
+          from: keyOwner,
+        })
+        expirationAfter = new BigNumber(
+          await lock.keyExpirationTimestampFor(newOwner)
         )
       })
 
-      describe('can transfer using transferFrom when the fee is paid', () => {
-        let tokenId
-        let keyOwnerInitialBalance
-        let lockInitialBalance
-        let transferGasCost
-        let estimatedTransferFee
+      it('the fee is deducted from the time transferred', async () => {
+        // make sure that a fee was taken
+        // fee may be over-estimated (but not under-estimated)
+        assert(expirationAfter.gte(expirationBefore.minus(fee)))
+        // if less than 5 seconds have passed than the delta should be <= 1
+        assert(expirationAfter.lte(expirationBefore.minus(fee).plus(1)))
+      })
 
-        before(async () => {
-          keyOwnerInitialBalance = new BigNumber(
-            await web3.eth.getBalance(keyOwner)
-          )
-          lockInitialBalance = new BigNumber(
-            await web3.eth.getBalance(lock.address)
-          )
-          tokenId = await lock.getTokenIdFor.call(keyOwner)
-          estimatedTransferFee = await lock.getTransferFee.call(keyOwner)
-
-          const tx = await lock.transferFrom(keyOwner, newOwner, tokenId, {
-            from: keyOwner,
-            value: estimatedTransferFee,
-          })
-
-          const gasPrice = new BigNumber(
-            (await web3.eth.getTransaction(tx.tx)).gasPrice
-          )
-          transferGasCost = gasPrice.times(tx.receipt.gasUsed)
-        })
-
-        it('transfer was successful', async () => {
-          const owner = await lock.ownerOf(tokenId)
-          assert.equal(owner, newOwner)
-        })
-
-        it('transfer fee was paid by the keyOwner', async () => {
-          const keyOwnerBalance = new BigNumber(
-            await web3.eth.getBalance(keyOwner)
-          )
-          assert.equal(
-            keyOwnerBalance.toFixed(),
-            keyOwnerInitialBalance
-              .minus(transferGasCost)
-              .minus(estimatedTransferFee)
-              .toFixed()
-          )
-        })
-
-        it('transfer fee was received by the contract', async () => {
-          const lockBalance = new BigNumber(
-            await web3.eth.getBalance(lock.address)
-          )
-          assert.equal(
-            lockBalance.toFixed(),
-            lockInitialBalance.plus(estimatedTransferFee).toFixed()
-          )
-        })
-
-        after(async () => {
-          // Reset owners
-          await lock.transferFrom(
-            newOwner,
-            keyOwner,
-            await lock.getTokenIdFor.call(newOwner),
-            {
-              from: newOwner,
-              value: await lock.getTransferFee.call(newOwner),
-            }
-          )
-        })
+      after(async () => {
+        // Reset owners
+        await lock.transferFrom(
+          newOwner,
+          keyOwner,
+          await lock.getTokenIdFor.call(newOwner),
+          {
+            from: newOwner,
+          }
+        )
       })
     })
 
@@ -134,36 +120,27 @@ contract('Lock / transferFee', accounts => {
       let tx
 
       before(async () => {
-        // Change the fee to 0.025%
-        tx = await lock.updateTransferFee(1, 4000)
+        // Change the fee to 0.25%
+        tx = await lock.updateTransferFee(25)
       })
 
       it('has an updated fee', async () => {
         const feeNumerator = new BigNumber(
-          await lock.transferFeeNumerator.call()
+          await lock.transferFeeBasisPoints.call()
         )
-        const feeDenominator = new BigNumber(
-          await lock.transferFeeDenominator.call()
-        )
-        assert.equal(feeNumerator.div(feeDenominator).toFixed(), 0.00025)
+        const feeDenominator = new BigNumber(await lock.BASIS_POINTS_DEN.call())
+        assert.equal(feeNumerator.div(feeDenominator).toFixed(), 0.0025)
       })
 
-      it('emits the TransferFeeDenominatorChanged event', async () => {
+      it('emits TransferFeeChanged event', async () => {
         assert.equal(tx.logs[0].event, 'TransferFeeChanged')
-        assert.equal(tx.logs[0].args.oldTransferFeeNumerator, 5)
-        assert.equal(tx.logs[0].args.oldTransferFeeDenominator, 100)
-        assert.equal(tx.logs[0].args.transferFeeNumerator, 1)
-        assert.equal(tx.logs[0].args.transferFeeDenominator, 4000)
+        assert.equal(tx.logs[0].args.transferFeeBasisPoints.toString(), 25)
       })
     })
 
     describe('should fail if', () => {
       it('called by an account which does not own the lock', async () => {
-        await shouldFail(lock.updateTransferFee(1, 100, { from: accounts[1] }))
-      })
-
-      it('attempt to set the denominator to 0', async () => {
-        await shouldFail(lock.updateTransferFee(1, 0), 'INVALID_RATE')
+        await shouldFail(lock.updateTransferFee(1000, { from: accounts[1] }))
       })
     })
   })

@@ -1,7 +1,6 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.14;
 
-import '../interfaces/IERC721.sol';
-import 'openzeppelin-eth/contracts/ownership/Ownable.sol';
+import '@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol';
 import './MixinFunds.sol';
 
 /**
@@ -12,7 +11,6 @@ import './MixinFunds.sol';
  * separates logically groupings of code to ease readability.
  */
 contract MixinDisableAndDestroy is
-  IERC721,
   Ownable,
   MixinFunds
 {
@@ -26,7 +24,7 @@ contract MixinDisableAndDestroy is
 
   event Disable();
 
-  constructor(
+  function _initializeMixinDisableAndDestroy(
   ) internal
   {
     isAlive = true;

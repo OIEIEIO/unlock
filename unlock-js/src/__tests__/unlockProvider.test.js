@@ -1,6 +1,8 @@
 import nock from 'nock'
 import sigUtil from 'eth-sig-util'
 import UnlockProvider from '../unlockProvider'
+import WalletService from '../walletService'
+import utils from '../utils'
 
 // TODO: move this to the integration tests directory
 
@@ -129,6 +131,47 @@ describe('Unlock Provider', () => {
         ).toBeTruthy()
       })
     })
+
+    describe('personal_sign', () => {
+      it('should sign some hex data with the user account private key', () => {
+        expect.assertions(1)
+        const someData = 'this is the data I want to sign'
+        const messageHash = utils.utf8ToHex(someData)
+
+        // second param is unused, but in keeping with what we receive from WalletService
+        const sig = provider.personal_sign([messageHash, ''])
+
+        expect(
+          sigUtil.recoverPersonalSignature({
+            data: messageHash,
+            sig,
+          })
+        ).toEqual(publicKey.toLowerCase())
+      })
+
+      it('should be compatible with walletService', async done => {
+        expect.assertions(1)
+
+        const ws = new WalletService({ unlockAddress: 'does not matter here' })
+        await ws.connect(provider)
+        ws.signDataPersonal('', 'this is my data', error => {
+          expect(error).toBeNull()
+          done()
+        })
+      })
+    })
+
+    describe('generateEjectionRequest', () => {
+      it('should return a signed ejection request for the current account', () => {
+        expect.assertions(1)
+
+        const signature = provider.generateSignedEjectionRequest()
+
+        expect(sigUtil.recoverTypedSignature(signature)).toEqual(
+          publicKey.toLowerCase()
+        )
+      })
+    })
   })
 
   describe('implemented JSON-RPC calls', () => {
@@ -137,6 +180,17 @@ describe('Unlock Provider', () => {
       const accounts = await provider.send('eth_accounts')
       expect(accounts).toHaveLength(1)
       expect(accounts[0]).toEqual(publicKey)
+    })
+
+    it('should respond to personal_sign by calling the defined method', async () => {
+      expect.assertions(1)
+      provider.personal_sign = jest.fn()
+      await provider.send('personal_sign', ['some data', 'an address'])
+
+      expect(provider.personal_sign).toHaveBeenCalledWith([
+        'some data',
+        'an address',
+      ])
     })
   })
 })

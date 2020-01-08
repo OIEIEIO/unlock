@@ -1,17 +1,36 @@
 import express from 'express'
 import signatureValidationMiddleware from '../middlewares/signatureValidationMiddleware'
+import MetadataController from '../controllers/metadataController'
 
-var router = express.Router()
+const router = express.Router()
 
-let metaDataConfiguration = {
+const metaDataConfiguration = {
   name: 'LockMetaData',
   required: ['name', 'description', 'owner', 'image'],
   signee: 'owner',
 }
 
-let keyMetaDataConfiguration = {
+const keyMetaDataConfiguration = {
   name: 'KeyMetaData',
   required: ['owner'],
+  signee: 'owner',
+}
+
+const userMetaDataConfiguration = {
+  name: 'UserMetaData',
+  required: ['owner', 'data'],
+  signee: 'owner',
+}
+
+const readUserMetaDataConfiguration = {
+  name: 'UserMetaData',
+  required: ['owner', 'timestamp'],
+  signee: 'owner',
+}
+
+const lockOwnerMetaDataConfiguration = {
+  name: 'LockMetaData',
+  required: ['address', 'owner', 'timestamp'],
   signee: 'owner',
 }
 
@@ -25,10 +44,38 @@ router.put(
   signatureValidationMiddleware.generateProcessor(keyMetaDataConfiguration)
 )
 
-var metaDataController = require('../controllers/metadataController')
+router.put(
+  '/:address/user/:userAddress',
+  signatureValidationMiddleware.generateProcessor(userMetaDataConfiguration)
+)
 
-router.get('/:address/:keyId', metaDataController.data)
-router.put('/:address/:keyId', metaDataController.updateKeyMetadata)
-router.put('/:address', metaDataController.updateDefaults)
+// Reads the user centric metadata
+router.get(
+  '/:address/user/:userAddress',
+  signatureValidationMiddleware.generateSignatureEvaluator(
+    readUserMetaDataConfiguration
+  )
+)
+
+router.get(
+  '/:address/:keyId',
+  signatureValidationMiddleware.generateSignatureEvaluator(
+    lockOwnerMetaDataConfiguration
+  )
+)
+
+router.get(
+  '/:address/keyHolderMetadata',
+  signatureValidationMiddleware.generateSignatureEvaluator(
+    lockOwnerMetaDataConfiguration
+  )
+)
+
+router.get('/:address/keyHolderMetadata', MetadataController.keyHolderMetadata)
+router.get('/:address/:keyId', MetadataController.data)
+router.put('/:address/:keyId', MetadataController.updateKeyMetadata)
+router.put('/:address', MetadataController.updateDefaults)
+router.put('/:address/user/:userAddress', MetadataController.updateUserMetadata)
+router.get('/:address/user/:userAddress', MetadataController.readUserMetadata)
 
 module.exports = router

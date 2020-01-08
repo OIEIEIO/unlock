@@ -52,7 +52,7 @@ describe('The Unlock Ad Remover Paywall (logged out user)', () => {
     await page.$('iframe[class="unlock start show"]')
   })
 
-  it('should show the logo on the checkout UI', async () => {
+  it.skip('should show the logo on the checkout UI', async () => {
     expect.assertions(0)
     await wait.forIframe(2) // wait for 2 iframes to be loaded, the data and checkout iframes
     const checkoutIframe = iframes.checkoutIframe(page)
@@ -73,7 +73,7 @@ describe('The Unlock Ad Remover Paywall (logged out user)', () => {
       const text = document.body.querySelector('p').innerText
       return (
         text ===
-        "To buy a key you'll need to use a crypto-enabled browser that has a wallet. Here are a few options:"
+        'To buy a key you will need to use a crypto-enabled browser that has a wallet. Here are a few options.'
       )
     })
   })

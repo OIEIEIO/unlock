@@ -1,12 +1,9 @@
 import { useEffect } from 'react'
 
-import {
-  POST_MESSAGE_CONFIG,
-  POST_MESSAGE_READY,
-} from '../paywall-builder/constants'
+import { PostMessages } from '../messageTypes'
+
 import useListenForPostMessage from './browser/useListenForPostMessage'
 import usePostMessage from './browser/usePostMessage'
-import { isValidPaywallConfig } from '../utils/validators'
 
 /**
  * Merge in the call to action sentences from defaults for any that the
@@ -45,14 +42,18 @@ export const defaultValue = {
     expired: 'Your access has expired. Please purchase a new key to continue',
     pending: 'Purchase pending...',
     confirmed: 'Purchase confirmed, content unlocked!',
+    noWallet:
+      'To buy a key you will need to use a crypto-enabled browser that has a wallet. Here are a few options.',
   },
 }
 
 export default function usePaywallConfig() {
   const { postMessage } = usePostMessage('Checkout UI (usePaywallConfig)')
   const paywallConfig = useListenForPostMessage({
-    type: POST_MESSAGE_CONFIG,
-    validator: isValidPaywallConfig,
+    type: PostMessages.CONFIG,
+    // Always treat paywall config as valid in this context, if it's
+    // invalid it's been checked in many other contexts and handled.
+    validator: () => true,
     defaultValue,
     getValue,
     local: 'Checkout UI',
@@ -60,7 +61,7 @@ export default function usePaywallConfig() {
   useEffect(() => {
     // this triggers the send of configuration from main window to the paywall
     // payload must be defined for the post office in unlock.min.js to recognize it as valid and from us
-    postMessage({ type: POST_MESSAGE_READY, payload: undefined })
+    postMessage({ type: PostMessages.READY, payload: undefined })
   }, [postMessage]) // only send this once, on startup
   return paywallConfig
 }

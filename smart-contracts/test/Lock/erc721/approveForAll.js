@@ -12,7 +12,7 @@ contract('Lock / erc721 / approveForAll', accounts => {
     unlock = await getProxy(unlockContract)
     const locks = await deployLocks(unlock, accounts[0])
     lock = locks['FIRST']
-    await lock.updateTransferFee(0, 1) // disable the transfer fee for this test
+    await lock.updateTransferFee(0) // disable the transfer fee for this test
   })
 
   let owner = accounts[1]
@@ -20,7 +20,7 @@ contract('Lock / erc721 / approveForAll', accounts => {
 
   describe('when the key exists', () => {
     before(async () => {
-      await lock.purchase(owner, web3.utils.padLeft(0, 40), [], {
+      await lock.purchase(0, owner, web3.utils.padLeft(0, 40), [], {
         value: Units.convert('0.01', 'eth', 'wei'),
         from: owner,
       })
@@ -60,9 +60,9 @@ contract('Lock / erc721 / approveForAll', accounts => {
 
       it('should trigger the ApprovalForAll event', () => {
         assert.equal(event.event, 'ApprovalForAll')
-        assert.equal(event.args._owner, owner)
-        assert.equal(event.args._operator, approvedUser)
-        assert.equal(event.args._approved, true)
+        assert.equal(event.args.owner, owner)
+        assert.equal(event.args.operator, approvedUser)
+        assert.equal(event.args.approved, true)
       })
 
       it('an authorized operator may set the approved address for an NFT', async () => {
@@ -140,9 +140,9 @@ contract('Lock / erc721 / approveForAll', accounts => {
 
       it('This emits when an operator is (enabled or) disabled for an owner.', async () => {
         assert.equal(event.event, 'ApprovalForAll')
-        assert.equal(event.args._owner, owner)
-        assert.equal(event.args._operator, approvedUser)
-        assert.equal(event.args._approved, false)
+        assert.equal(event.args.owner, owner)
+        assert.equal(event.args.operator, approvedUser)
+        assert.equal(event.args.approved, false)
       })
     })
   })

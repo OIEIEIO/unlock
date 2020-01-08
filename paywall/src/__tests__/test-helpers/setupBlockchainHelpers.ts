@@ -5,7 +5,6 @@ import {
   LocksmithTransactionsResult,
   FetchWindow,
   SetTimeoutWindow,
-  ConstantsType,
   BlockchainData,
 } from '../../data-iframe/blockchainHandler/blockChainTypes'
 import {
@@ -103,7 +102,7 @@ export interface BlockchainTestDefaults {
   emitChanges: () => void
   listeners: { [key: string]: Function }
   store: PaywallState
-  constants: ConstantsType
+  constants: any
   configuration: PaywallConfig
 }
 
@@ -122,6 +121,7 @@ export const defaultValuesOverride: OptionalBlockchainValues = {
       expired: '',
       pending: '',
       confirmed: '',
+      noWallet: '',
     },
   },
   account: null,
@@ -146,6 +146,7 @@ export function setupTestDefaults(
         expired: '',
         pending: '',
         confirmed: '',
+        noWallet: '',
       },
     },
     account: null,
@@ -163,7 +164,7 @@ export function setupTestDefaults(
   result.listeners = {}
   result.constants = {
     requiredConfirmations: 12,
-    locksmithHost: 'http://fun.times',
+    locksmithUri: 'http://fun.times',
     unlockAddress: '0x123',
     blockTime: 5000,
     readOnlyProvider: 'http://readonly',
@@ -186,6 +187,7 @@ export function setupTestDefaults(
         expired: '',
         pending: '',
         confirmed: '',
+        noWallet: '',
       },
     },
     account: null,
@@ -211,7 +213,7 @@ type KeyExpirationOverrides = {
 
 export function getDefaultFullLocks(
   store: PaywallState,
-  config: PaywallConfig,
+  _: PaywallConfig,
   keyExpirations: KeyExpirationOverrides = {}
 ): Locks {
   return {
@@ -225,7 +227,7 @@ export function getDefaultFullLocks(
         status: 'none',
         transactions: [],
       },
-      name: config.locks[lockAddresses[0]].name || 'one',
+      name: 'one',
       keyPrice: '0',
       expirationDuration: 1,
       currencyContractAddress: null,
@@ -240,7 +242,7 @@ export function getDefaultFullLocks(
         status: 'none',
         transactions: [],
       },
-      name: config.locks[lockAddresses[1]].name || 'two',
+      name: 'two',
       keyPrice: '0',
       expirationDuration: 1,
       currencyContractAddress: null,
@@ -255,7 +257,7 @@ export function getDefaultFullLocks(
         status: 'none',
         transactions: [],
       },
-      name: config.locks[lockAddresses[2]].name || 'three',
+      name: 'three',
       keyPrice: '0',
       expirationDuration: 1,
       currencyContractAddress: null,

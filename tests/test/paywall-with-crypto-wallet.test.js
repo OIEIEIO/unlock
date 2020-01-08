@@ -55,6 +55,10 @@ describe('The Unlock Ad Remover Paywall (logged in user)', () => {
       )}&provider=${encodeURIComponent(url.readOnlyProvider())}&logindelay=0`
     )
     await page.goto(testUrl, { waitUntil: 'networkidle2' })
+    await page.evaluate(() => {
+      localStorage.setItem('__unlockProtocol.accountAddress', '0xwhatever')
+    })
+    await page.reload()
   })
 
   it('should open the checkout UI when clicking on the button', async () => {

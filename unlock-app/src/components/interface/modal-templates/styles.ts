@@ -1,4 +1,11 @@
 import styled from 'styled-components'
+import Close from '../buttons/layout/Close'
+
+export const Quit = styled(Close)`
+  position: absolute;
+  right: 16px;
+  top: 16px;
+`
 
 export const Dismiss = styled.button`
   height: 24px;

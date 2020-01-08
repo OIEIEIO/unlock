@@ -1,9 +1,9 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.14;
 
 import './MixinDisableAndDestroy.sol';
 import './MixinKeys.sol';
 import './MixinLockCore.sol';
-import 'openzeppelin-eth/contracts/math/SafeMath.sol';
+import '@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol';
 import './MixinFunds.sol';
 import './MixinEventHooks.sol';
 
@@ -25,11 +25,17 @@ contract MixinPurchase is
 
   /**
   * @dev Purchase function
+  * @param _value the number of tokens to pay for this purchase >= the current keyPrice - any applicable discount
+  * (_value is ignored when using ETH)
   * @param _recipient address of the recipient of the purchased key
   * @param _referrer address of the user making the referral
   * @param _data arbitrary data populated by the front-end which initiated the sale
+  * @dev Setting _value to keyPrice exactly doubles as a security feature. That way if the lock owner increases the
+  * price while my transaction is pending I can't be charged more than I expected (only applicable to ERC-20 when more
+  * than keyPrice is approved for spending).
   */
   function purchase(
+    uint256 _value,
     address _recipient,
     address _referrer,
     bytes calldata _data
@@ -39,21 +45,8 @@ contract MixinPurchase is
   {
     require(_recipient != address(0), 'INVALID_ADDRESS');
 
-    // Let's get the actual price for the key from the Unlock smart contract
-    uint discount;
-    uint tokens;
-    uint inMemoryKeyPrice = keyPrice;
-    (discount, tokens) = unlockProtocol.computeAvailableDiscountFor(_recipient, inMemoryKeyPrice);
-    uint netPrice = inMemoryKeyPrice;
-    if (discount > inMemoryKeyPrice) {
-      netPrice = 0;
-    } else {
-      // SafeSub not required as the if statement already confirmed `inMemoryKeyPrice - discount` cannot underflow
-      netPrice = inMemoryKeyPrice - discount;
-    }
-
     // Assign the key
-    Key storage toKey = _getKeyFor(_recipient);
+    Key storage toKey = keyByOwner[_recipient];
 
     if (toKey.tokenId == 0) {
       // Assign a new tokenId (if a new owner or previously transfered)
@@ -70,11 +63,24 @@ contract MixinPurchase is
       toKey.expirationTimestamp = block.timestamp + expirationDuration;
     }
 
+    // Let's get the actual price for the key from the Unlock smart contract
+    uint discount;
+    uint tokens;
+    uint inMemoryKeyPrice = keyPrice;
+    (discount, tokens) = unlockProtocol.computeAvailableDiscountFor(_recipient, inMemoryKeyPrice);
+
+    if (discount > inMemoryKeyPrice) {
+      inMemoryKeyPrice = 0;
+    } else {
+      // SafeSub not required as the if statement already confirmed `inMemoryKeyPrice - discount` cannot underflow
+      inMemoryKeyPrice -= discount;
+    }
+
     if (discount > 0) {
       unlockProtocol.recordConsumedDiscount(discount, tokens);
     }
 
-    unlockProtocol.recordKeyPurchase(netPrice, getHasValidKey(_referrer) ? _referrer : address(0));
+    unlockProtocol.recordKeyPurchase(inMemoryKeyPrice, getHasValidKey(_referrer) ? _referrer : address(0));
 
     // trigger event
     emit Transfer(
@@ -83,9 +89,13 @@ contract MixinPurchase is
       toKey.tokenId
     );
 
-    // We explicitly allow for greater amounts of ETH to allow 'donations'
+    // We explicitly allow for greater amounts of ETH or tokens to allow 'donations'
+    if(tokenAddress != address(0)) {
+      require(_value >= inMemoryKeyPrice, 'INSUFFICIENT_VALUE');
+      inMemoryKeyPrice = _value;
+    }
     // Security: after state changes to minimize risk of re-entrancy
-    uint pricePaid = _chargeAtLeast(netPrice);
+    uint pricePaid = _chargeAtLeast(inMemoryKeyPrice);
 
     // Security: last line to minimize risk of re-entrancy
     _onKeySold(_recipient, _referrer, pricePaid, _data);

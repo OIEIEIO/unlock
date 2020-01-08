@@ -43,7 +43,6 @@ describe('Web3Service', () => {
       unlockAddress,
       blockTime,
       requiredConfirmations,
-      useEthers: true,
     })
     return nock.resolveWhenAllNocksUsed()
   }
@@ -59,32 +58,12 @@ describe('Web3Service', () => {
     it('should return the right transaction type on lock creation', async () => {
       expect.assertions(1)
       await nockBeforeEach()
-      // TODO Since this test is version specific it does not belong here.
-      // Removing it will make things easier/cleaner to handle in the future
-      let data
       const currencyAddress = ethers.constants.AddressZero // Token address (ERC20 support). null is for Eth
-      if (version === 'v0') {
-        data = getEncoder(UnlockVersion.Unlock.abi, 'createLock')([
-          '1000',
-          '1000000000',
-          '1',
-        ])
-      } else if (version === 'v10') {
-        data = getEncoder(UnlockVersion.Unlock.abi, 'createLock')([
-          '1000', // _expirationDuration
-          currencyAddress, // _tokenAddress
-          '1000000000', // _keyPrice
-          '1', //_maxNumberOfKeys
-          'Lock name', // _lockName
-        ])
-      } else {
-        data = getEncoder(UnlockVersion.Unlock.abi, 'createLock')([
-          '1000',
-          currencyAddress,
-          '1000000000',
-          '1',
-        ])
-      }
+
+      const data = getEncoder(
+        UnlockVersion.Unlock.abi,
+        'createLock'
+      )(['1000', currencyAddress, '1000000000', '1'])
       const type = web3Service._getTransactionType(UnlockVersion.Unlock, data)
       expect(type).toBe(TransactionTypes.LOCK_CREATION)
     })
@@ -94,14 +73,15 @@ describe('Web3Service', () => {
       await nockBeforeEach()
       let data
       if (version !== 'v0') {
-        data = getEncoder(UnlockVersion.PublicLock.abi, 'purchaseFor')([
-          account,
-        ])
+        data = getEncoder(
+          UnlockVersion.PublicLock.abi,
+          'purchaseFor'
+        )([account])
       } else {
-        data = getEncoder(UnlockVersion.PublicLock.abi, 'purchaseFor')([
-          account,
-          utils.utf8ToHex(''),
-        ])
+        data = getEncoder(
+          UnlockVersion.PublicLock.abi,
+          'purchaseFor'
+        )([account, utils.utf8ToHex('')])
       }
       expect(
         web3Service._getTransactionType(UnlockVersion.PublicLock, data)
@@ -120,9 +100,10 @@ describe('Web3Service', () => {
     it('should return the right transaction type on key price updates', async () => {
       expect.assertions(1)
       await nockBeforeEach()
-      const data = getEncoder(UnlockVersion.PublicLock.abi, 'updateKeyPrice')([
-        123,
-      ])
+      const data = getEncoder(
+        UnlockVersion.PublicLock.abi,
+        'updateKeyPrice'
+      )([123])
       expect(
         web3Service._getTransactionType(UnlockVersion.PublicLock, data)
       ).toBe(TransactionTypes.UPDATE_KEY_PRICE)
@@ -137,7 +118,6 @@ describe('Web3Service', () => {
       unlockAddress,
       blockTime,
       requiredConfirmations,
-      useEthers: true,
     })
     web3Service._getPublicLockVersionFromContract = jest.fn(() => actualVersion)
     web3Service._getVersionFromContract = jest.fn(() => actualVersion)
@@ -149,6 +129,7 @@ describe('Web3Service', () => {
       it('should emit lock.updated with correctly typed values', async done => {
         expect.assertions(2)
         await versionedNockBeforeEach()
+        const sender = '0xsender'
         const params = {
           _expirationDuration: '7',
           _maxNumberOfKeys: '5',
@@ -161,7 +142,12 @@ describe('Web3Service', () => {
           done()
         })
 
-        await web3Service.inputsHandlers.createLock('0x123', '0x456', params)
+        await web3Service.inputsHandlers.createLock(
+          '0x123',
+          '0x456',
+          sender,
+          params
+        )
       })
     })
 
@@ -170,6 +156,7 @@ describe('Web3Service', () => {
       await versionedNockBeforeEach()
       let resolveKeySaver
       let resolveTransactionUpdater
+      const sender = '0xsender'
       const owner = '0x9876'
       const fakeParams = {
         _recipient: owner,
@@ -206,6 +193,7 @@ describe('Web3Service', () => {
       web3Service.inputsHandlers.purchaseFor(
         fakeHash,
         fakeContractAddress,
+        sender,
         fakeParams
       )
       await Promise.all([keySaver, transactionUpdater])
@@ -467,7 +455,7 @@ describe('Web3Service', () => {
     })
 
     it('should call the handler if the transaction input can be parsed', async done => {
-      expect.assertions(3)
+      expect.assertions(4)
       await versionedNockBeforeEach()
       web3Service._getTransactionType = jest.fn(() => 'TRANSACTION_TYPE')
       const input =
@@ -495,10 +483,12 @@ describe('Web3Service', () => {
       web3Service.inputsHandlers[method.name] = (
         transactionHash,
         contractAddress,
+        sender,
         args
       ) => {
         expect(transactionHash).toEqual(transaction.hash)
         expect(contractAddress).toEqual(web3Service.unlockContractAddress)
+        expect(sender).toEqual(transaction.from)
         expect(args).toEqual(params)
         done()
       }
@@ -508,7 +498,8 @@ describe('Web3Service', () => {
         transaction.hash,
         FakeContract,
         input,
-        web3Service.unlockContractAddress
+        web3Service.unlockContractAddress,
+        transaction.from
       )
     })
   })

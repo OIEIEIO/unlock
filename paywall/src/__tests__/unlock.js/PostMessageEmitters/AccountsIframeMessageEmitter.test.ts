@@ -23,6 +23,51 @@ describe('AccountsIframeMessageEmitter', () => {
     return emitter
   }
 
+  describe('message buffer', () => {
+    beforeEach(() => {
+      fakeWindow = new FakeWindow()
+    })
+
+    it('should buffer messages before the iframe is created', () => {
+      expect.assertions(5)
+
+      const emitter = makeEmitter(fakeWindow)
+
+      emitter.postMessage(PostMessages.LOCKED, undefined)
+      expect(emitter.buffer).toHaveLength(1)
+
+      emitter.postMessage(PostMessages.HIDE_ACCOUNTS_MODAL, undefined)
+      expect(emitter.buffer).toHaveLength(2)
+
+      // createIframe will set up the listeners, including the one for ready
+      emitter.createIframe()
+      ;(emitter as any)._postMessage = jest.fn()
+
+      // After this fires, the buffer will start to drain
+      fakeWindow.receivePostMessageFromIframe(
+        PostMessages.READY,
+        undefined,
+        emitter.iframe,
+        accountsOrigin
+      )
+
+      expect((emitter as any)._postMessage).toHaveBeenNthCalledWith(
+        1,
+        PostMessages.LOCKED,
+        undefined
+      )
+      expect((emitter as any)._postMessage).toHaveBeenNthCalledWith(
+        2,
+        PostMessages.HIDE_ACCOUNTS_MODAL,
+        undefined
+      )
+
+      // The buffer should be cleared after the messages are sent for
+      // real
+      expect(emitter.buffer).toHaveLength(0)
+    })
+  })
+
   describe('emitter construction', () => {
     beforeEach(() => {
       fakeWindow = new FakeWindow()
@@ -45,21 +90,6 @@ describe('AccountsIframeMessageEmitter', () => {
       expect(
         fakeWindow.document.body.insertAdjacentElement
       ).not.toHaveBeenCalled()
-    })
-
-    it('should set up postMessage after the iframe is created', () => {
-      expect.assertions(1)
-
-      const emitter = makeEmitterWithIframe(fakeWindow)
-
-      emitter.postMessage(PostMessages.SCROLL_POSITION, 5)
-
-      fakeWindow.expectPostMessageSentToIframe(
-        PostMessages.SCROLL_POSITION,
-        5,
-        emitter.iframe,
-        accountsOrigin // iframe origin
-      )
     })
 
     it('should set up addHandler after the iframe is created', () => {
@@ -86,7 +116,7 @@ describe('AccountsIframeMessageEmitter', () => {
       const emitter = makeEmitter(fakeWindow)
       emitter.iframe.contentWindow.postMessage = jest.fn()
 
-      emitter.postMessage(PostMessages.SCROLL_POSITION, 5)
+      emitter.postMessage(PostMessages.READY, undefined)
 
       expect(emitter.iframe.contentWindow.postMessage).not.toHaveBeenCalled()
     })

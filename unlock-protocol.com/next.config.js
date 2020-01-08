@@ -16,10 +16,14 @@ dotenv.config({
   path: path.resolve(__dirname, '..', `.env.${unlockEnv}.local`),
 })
 
+// NOTE: do not set defaults here!
+// This is a mechanism to ensure that we do not deploy code with missing/wrong
+// environment variables
 let requiredConfigVariables = {
   unlockEnv,
   googleAnalyticsId,
-  dashboardUrl: process.env.DASHBOARD_URL,
+  urlBase: process.env.URL_BASE,
+  unlockApp: process.env.UNLOCK_APP,
   intercomAppId: 'f99d98d3', // Hardcoded for now
 }
 

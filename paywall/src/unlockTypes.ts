@@ -17,6 +17,8 @@ export enum TransactionStatus {
   SUBMITTED = 'submitted',
   PENDING = 'pending',
   MINED = 'mined',
+  STALE = 'stale',
+  FAILED = 'failed',
   NONE = '', // for testing purposes
 }
 /* eslint-enable no-unused-vars */
@@ -28,6 +30,7 @@ export interface Transaction {
   type: TransactionType
   blockNumber: number
 
+  createdAt?: Date
   to?: string
   for?: string
   from?: string
@@ -60,6 +63,7 @@ export interface PaywallCallToAction {
   expired: string
   pending: string
   confirmed: string
+  noWallet: string
 }
 
 export interface PaywallConfigLocks {
@@ -70,12 +74,19 @@ export interface PaywallConfigLock {
   name: string
 }
 
+export interface MetadataInput {
+  name: string
+  type: 'text' | 'date' | 'color' | 'email' | 'url'
+  required: boolean
+}
+
 // This interface describes an individual paywall's config
 export interface PaywallConfig {
   icon?: string
   unlockUserAccounts?: true | 'true' | false
   callToAction: PaywallCallToAction
   locks: PaywallConfigLocks
+  metadataInputs?: MetadataInput[]
 }
 
 export enum KeyStatus {
@@ -141,3 +152,16 @@ export interface PurchaseKeyRequest {
   lock: string // lock address
   extraTip: string // extra value to add in addition to key price
 }
+
+export interface NetworkNames {
+  [key: number]: string[]
+}
+
+// Keys exactly as they come out of Web3Service
+export interface KeyResult {
+  lock: string
+  owner: string
+  expiration: number
+}
+
+export type KeyResults = { [key: string]: KeyResult }

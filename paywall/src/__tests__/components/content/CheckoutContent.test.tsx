@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { act } from 'react-dom/test-utils'
-import * as rtl from 'react-testing-library'
+import * as rtl from '@testing-library/react'
 import { EventEmitter } from 'events'
 import CheckoutContent from '../../../components/content/CheckoutContent'
 import { ConfigContext } from '../../../utils/withConfig'
@@ -82,7 +82,8 @@ const config = {
 describe('CheckoutContent', () => {
   it('shows the wallet check after the purchase button is clicked', () => {
     expect.assertions(2)
-    const walletCheckMessage = 'Please check your browser wallet.'
+    const walletCheckMessage =
+      "Please check your browser's cryptocurrency wallet."
 
     const { getByText } = rtl.render(
       <ConfigContext.Provider value={config}>
@@ -111,7 +112,8 @@ describe('CheckoutContent', () => {
   it('dismisses the wallet check when an error is received', () => {
     expect.assertions(1)
 
-    const walletCheckMessage = 'Please check your browser wallet.'
+    const walletCheckMessage =
+      "Please check your browser's cryptocurrency wallet."
 
     const { getByText } = rtl.render(
       <ConfigContext.Provider value={config}>

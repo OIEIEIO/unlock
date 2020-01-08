@@ -48,9 +48,10 @@ Layout.defaultProps = {
 }
 
 const Container = styled.div`
+  font-family: 'IBM Plex Sans', sans-serif;
   display: grid;
   padding-bottom: 60px; /* Leaving room for the members bar */
-  grid-template-columns: 1fr minmax(280px, 4fr) 1fr;
+  grid-template-columns: 1fr 896px 1fr;
   ${Media.phone`
     display: flex;
     padding-left: 6px;

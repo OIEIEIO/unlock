@@ -6,9 +6,10 @@ import Layout from '../interface/Layout'
 import { pageTitle } from '../../constants'
 import Errors from '../interface/Errors'
 import AccountInfo from '../interface/user-account/AccountInfo'
-import ChangePassword from '../interface/user-account/ChangePassword'
 import PaymentDetails from '../interface/user-account/PaymentDetails'
 import PaymentMethods from '../interface/user-account/PaymentMethods'
+import EjectAccount from '../interface/user-account/EjectAccount'
+import LogInSignUp from '../interface/LogInSignUp'
 
 // TODO: tighten up this type
 declare global {
@@ -21,6 +22,9 @@ interface SettingsContentProps {
   config: {
     stripeApiKey: string
   }
+  account: {
+    emailAddress?: string
+  } | null
   cards: stripe.Card[]
 }
 interface SettingsContentState {
@@ -46,6 +50,10 @@ export class SettingsContent extends React.Component<
     this.interval = setInterval(this.getStripe, 500)
   }
 
+  componentWillUnmount() {
+    this.removeInterval()
+  }
+
   getStripe = () => {
     const {
       config: { stripeApiKey },
@@ -54,35 +62,51 @@ export class SettingsContent extends React.Component<
       this.setState({
         stripe: window.Stripe(stripeApiKey),
       })
-      if (this.interval) {
-        clearInterval(this.interval)
-      }
+      this.removeInterval()
+    }
+  }
+
+  removeInterval() {
+    if (this.interval) {
+      clearInterval(this.interval)
     }
   }
 
   render() {
     const { stripe } = this.state
-    const { cards } = this.props
+    const { cards, account } = this.props
+
     return (
       <Layout title="Account Settings">
         <Head>
           <title>{pageTitle('Account Settings')}</title>
-          <script id="stripe-js" src="https://js.stripe.com/v3/" async></script>
+          <script id="stripe-js" src="https://js.stripe.com/v3/" async />
         </Head>
         <Errors />
-        <AccountInfo />
-        <ChangePassword />
-        {cards.length > 0 && <PaymentMethods cards={cards} />}
-        {!cards.length && <PaymentDetails stripe={stripe} />}
+        {account && account.emailAddress && (
+          <>
+            <AccountInfo />
+            {cards.length > 0 && <PaymentMethods cards={cards} />}
+            {stripe && !cards.length && <PaymentDetails stripe={stripe} />}
+            <EjectAccount />
+          </>
+        )}
+        {!account && <LogInSignUp login />}
+        {account && !account.emailAddress && (
+          <p>
+            This page contains settings for managed account users. Crypto users
+            (like you!) don&apos;t need it.
+          </p>
+        )}
       </Layout>
     )
   }
 }
 
 interface ReduxState {
-  account?: {
+  account: {
     cards?: stripe.Card[]
-  }
+  } | null
 }
 
 export const mapStateToProps = ({ account }: ReduxState) => {
@@ -92,6 +116,7 @@ export const mapStateToProps = ({ account }: ReduxState) => {
   }
 
   return {
+    account,
     cards,
   }
 }

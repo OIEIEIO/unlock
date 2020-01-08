@@ -10,7 +10,6 @@ export const success = {
   storeTransaction: 'storeTransaction.success',
   getTransactionHashesSentBy: 'getTransactionHashesSentBy.success',
   getLockAddressesForUser: 'getLockAddressesForUser.success',
-  lockLookUp: 'lockLookUp.success',
   storeLockDetails: 'storeLockDetails.success',
   createUser: 'createUser.success',
   updateUser: 'updateUser.success',
@@ -19,6 +18,9 @@ export const success = {
   getCards: 'getCards.success',
   keyPurchase: 'keyPurchase.success',
   getKeyPrice: 'getKeyPrice.success',
+  ejectUser: 'ejectUser.success',
+  getMetadataFor: 'getMetadataFor.success',
+  getBulkMetadataFor: 'getBulkMetadataFor.success',
 }
 
 export const failure = {
@@ -26,7 +28,6 @@ export const failure = {
   storeTransaction: 'storeTransaction.failure',
   getTransactionHashesSentBy: 'getTransactionHashesSentBy.failure',
   getLockAddressesForUser: 'getLockAddressesForUser.failure',
-  lockLookUp: 'lockLookUp.failure',
   storeLockDetails: 'storeLockDetails.failure',
   createUser: 'createUser.failure',
   updateUser: 'updateUser.failure',
@@ -35,6 +36,9 @@ export const failure = {
   getCards: 'getCards.failure',
   keyPurchase: 'keyPurchase.failure',
   getKeyPrice: 'getKeyPrice.failure',
+  ejectUser: 'ejectUser.failure',
+  getMetadataFor: 'getMetadataFor.failure',
+  getBulkMetadataFor: 'getBulkMetadataFor.failure',
 }
 
 export class StorageService extends EventEmitter {
@@ -71,15 +75,16 @@ export class StorageService extends EventEmitter {
   }
 
   /**
-   * Gets all the transactions sent by a given address.
+   * Gets all the transactions sent by a given address, in the last 24 hours
    * Returns an empty array by default
    * TODO: consider a more robust url building
    * @param {*} senderAddress
    */
-  async getTransactionsHashesSentBy(senderAddress) {
+  async getRecentTransactionsHashesSentBy(senderAddress) {
     try {
+      const oneDayAgo = new Date().getTime() - 1000 * 60 * 60 * 24
       const response = await axios.get(
-        `${this.host}/transactions?sender=${senderAddress}`
+        `${this.host}/transactions?sender=${senderAddress}&createdAfter=${oneDayAgo}`
       )
       let hashes = []
       if (response.data && response.data.transactions) {
@@ -98,27 +103,6 @@ export class StorageService extends EventEmitter {
 
   genAuthorizationHeader = token => {
     return { Authorization: ` Bearer ${token}` }
-  }
-
-  /**
-   * Returns the name of the request Lock,
-   * in a failure scenario a rejected promise is returned
-   * to the caller.
-   *
-   * @param {*} address
-   */
-  async lockLookUp(address) {
-    try {
-      const result = await axios.get(`${this.host}/lock/${address}`)
-      if (result.data && result.data.name) {
-        const name = result.data.name
-        this.emit(success.lockLookUp, { address, name })
-      } else {
-        this.emit(failure.lockLookUp, 'No name for this lock.')
-      }
-    } catch (error) {
-      this.emit(failure.lockLookUp, error)
-    }
   }
 
   /**
@@ -158,12 +142,13 @@ export class StorageService extends EventEmitter {
   async createUser(user, emailAddress, password) {
     const opts = {}
     try {
-      await axios.post(`${this.host}/users/`, user, opts)
+      const response = await axios.post(`${this.host}/users/`, user, opts)
       this.emit(success.createUser, {
         passwordEncryptedPrivateKey:
           user.message.user.passwordEncryptedPrivateKey,
         emailAddress,
         password,
+        recoveryPhrase: response.data.recoveryPhrase,
       })
     } catch (error) {
       this.emit(failure.createUser, error)
@@ -348,6 +333,93 @@ export class StorageService extends EventEmitter {
       this.emit(success.getKeyPrice, result.data)
     } catch (error) {
       this.emit(failure.getKeyPrice, error)
+    }
+  }
+
+  /**
+   * Ejects a user
+   *
+   * @param {*} publicKey
+   * @param {*} data structured_data used to generate signature
+   * @param {*} token
+   */
+  async ejectUser(publicKey, data, token) {
+    const opts = {}
+    opts.headers = this.genAuthorizationHeader(btoa(token))
+    try {
+      await axios.post(`${this.host}/users/${publicKey}/eject`, data, opts)
+      this.emit(success.ejectUser, { publicKey })
+    } catch (error) {
+      this.emit(failure.ejectUser, { publicKey })
+    }
+  }
+
+  /*
+   * Given a lock address, a key ID, and a typed data signature, get
+   * the metadata (public and protected) associated with that key.
+   * @param {string} lockAddress
+   * @param {string} keyId
+   * @param {*} signature
+   * @param {*} data
+   */
+  async getMetadataFor(lockAddress, keyId, signature, data) {
+    const stringData = JSON.stringify(data)
+    const opts = {
+      headers: this.genAuthorizationHeader(signature),
+      // No body allowed in GET, so these are passed as query params for this
+      // call.
+      params: {
+        data: stringData,
+        signature: signature,
+      },
+    }
+    try {
+      const result = await axios.get(
+        `${this.host}/api/key/${lockAddress}/${keyId}`,
+        opts
+      )
+      const payload = {
+        lockAddress,
+        keyId,
+        data: {},
+      }
+
+      if (result.data && result.data.userMetadata) {
+        payload.data = result.data.userMetadata
+      }
+      this.emit(success.getMetadataFor, payload)
+    } catch (error) {
+      this.emit(failure.getMetadataFor, error)
+    }
+  }
+
+  /**
+   * Given a lock address and a typed data signature, get the metadata
+   * (public and protected) associated with each key on that lock.
+   * @param {string} lockAddress
+   * @param {string} signature
+   * @param {*} data
+   */
+  async getBulkMetadataFor(lockAddress, signature, data) {
+    const stringData = JSON.stringify(data)
+    const opts = {
+      headers: this.genAuthorizationHeader(signature),
+      // No body allowed in GET, so these are passed as query params for this
+      // call.
+      params: {
+        data: stringData,
+        signature: signature,
+      },
+    }
+    try {
+      const result = await axios.get(
+        `${this.host}/api/key/${lockAddress}/keyHolderMetadata`,
+        opts
+      )
+
+      this.emit(success.getBulkMetadataFor, lockAddress, result.data)
+    } catch (error) {
+      this.emit(failure.getBulkMetadataFor, error)
     }
   }
 }

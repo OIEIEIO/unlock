@@ -42,7 +42,6 @@ export const children = PropTypes.shape({})
 
 export const component = PropTypes.func
 
-// TODO
 export const configuration = PropTypes.shape({})
 
 export const mechanism = PropTypes.oneOf(['0', '1', '2', undefined])
@@ -75,8 +74,6 @@ export const showDashboardForm = PropTypes.bool
 export const element = PropTypes.oneOfType([PropTypes.func, PropTypes.element])
 
 export const delay = PropTypes.number
-
-export const keyList = PropTypes.arrayOf(key)
 
 export const post = PropTypes.shape({
   title: PropTypes.string,
@@ -111,7 +108,6 @@ export default {
   element,
   error,
   key,
-  keyList,
   keys,
   layout,
   lock,

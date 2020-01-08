@@ -1,3 +1,4 @@
+import styled from 'styled-components'
 import React from 'react'
 import { connect } from 'react-redux'
 import Head from 'next/head'
@@ -6,7 +7,6 @@ import UnlockPropTypes from '../../propTypes'
 import Layout from '../interface/Layout'
 import Account from '../interface/Account'
 import CreatorLocks from '../creator/CreatorLocks'
-import DeveloperOverlay from '../developer/DeveloperOverlay'
 import BrowserOnly from '../helpers/BrowserOnly'
 import { pageTitle } from '../../constants'
 import {
@@ -14,6 +14,7 @@ import {
   AccountWrapper,
 } from '../interface/buttons/ActionButton'
 import { showForm, hideForm } from '../../actions/lockFormVisibility'
+import { Phone } from '../../theme/media'
 
 export const DashboardContent = ({
   account,
@@ -38,8 +39,14 @@ export const DashboardContent = ({
               Create Lock
             </CreateLockButton>
           </AccountWrapper>
+          <Phone>
+            <Warning>
+              The Dashboard is currently not optimized for a mobile experience.
+              To create locks, please use a desktop computer.
+            </Warning>
+          </Phone>
+
           <CreatorLocks />
-          <DeveloperOverlay />
         </BrowserOnly>
       )}
     </Layout>
@@ -75,7 +82,11 @@ const mapDispatchToProps = dispatch => ({
   hideForm: () => dispatch(hideForm()),
 })
 
-export default connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(DashboardContent)
+export default connect(mapStateToProps, mapDispatchToProps)(DashboardContent)
+
+const Warning = styled.p`
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  padding: 10px;
+  color: var(--red);
+`

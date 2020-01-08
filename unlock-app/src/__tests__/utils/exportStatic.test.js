@@ -43,11 +43,13 @@ describe('exportStatic', () => {
       '/': { page: '/home' },
       '/account': { page: '/account' },
       '/dashboard': { page: '/dashboard' },
-      '/keychain': { page: '/keyChain' },
-      '/log': { page: '/log' },
+      '/keychain': { page: '/keychain' },
       '/login': { page: '/login' },
       '/signup': { page: '/signup' },
       '/settings': { page: '/settings' },
+      '/recover': { page: '/recover' },
+      '/verification': { page: '/verification' },
+      '/members': { page: '/members' },
     })
   })
 })

@@ -16,7 +16,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh unlockprotocol $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh unlock-protocol.com $CIRCLE_BRANCH
       - run:
           name: Build unlock-protocol-com Image
           command: scripts/build-image.sh unlock-protocol-com
@@ -31,28 +31,13 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh unlock-app $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh unlock-app $CIRCLE_BRANCH
       - run:
           name: Build unlock-app Image
           command: scripts/build-image.sh unlock-app
       - run:
           name: unlock-app tests
           command: scripts/tests.sh unlock-app
-
-  unlock-app-chromatic:
-    machine: true
-    environment:
-      DOCKER_REPOSITORY: unlockprotocol
-    steps:
-      - checkout
-      - run:
-          name: Build unlock-app Image
-          command: scripts/build-image.sh unlock-app
-      - run:
-          name: Creator Dashboard stories
-          command: scripts/storybook.sh unlock-app "$CIRCLE_BRANCH" $CIRCLE_SHA1
-          environment:
-            UNLOCK_APP_CHROMATIC_APP_CODE: swpc6wf70qp
 
   unlock-js-tests:
     machine: true
@@ -61,13 +46,17 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh unlock-js $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh unlock-js $CIRCLE_BRANCH
       - run:
           name: Build unlock-js Image
           command: scripts/build-image.sh unlock-js
       - run:
           name: unlock-js tests
           command: scripts/unlockjs-tests.sh unlock-js
+      - run:
+          name: Log failing tests
+          command: ./scripts/docker-compose-log.sh
+          when: on_fail
 
   rover-tests:
     machine: true
@@ -76,7 +65,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh rover $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh rover $CIRCLE_BRANCH
       - run:
           name: Build rover Image
           command: scripts/build-image.sh rover
@@ -91,7 +80,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh smart-contracts $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh smart-contracts $CIRCLE_BRANCH
       - run:
           name: Build smart-contracts Image
           command: scripts/build-image.sh smart-contracts
@@ -110,7 +99,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh locksmith $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh locksmith $CIRCLE_BRANCH
       - run:
           name: Build Locksmith Image
           command: scripts/build-image.sh locksmith
@@ -125,7 +114,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh paywall $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh paywall $CIRCLE_BRANCH
       - run:
           name: Build paywall Image
           command: scripts/build-image.sh paywall
@@ -140,13 +129,28 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh tickets $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh tickets $CIRCLE_BRANCH
       - run:
           name: Build tickets Image
           command: scripts/build-image.sh tickets
       - run:
           name: Tickets Tests
           command: scripts/tests.sh tickets
+
+  newsletter-tests:
+    machine: true
+    environment:
+      DOCKER_REPOSITORY: unlockprotocol
+    steps:
+      - checkout
+      - run:
+          command: scripts/monorepo.sh newsletter $CIRCLE_BRANCH
+      - run:
+          name: Build newsletter Image
+          command: scripts/build-image.sh newsletter
+      - run:
+          name: Newsletter Tests
+          command: scripts/tests.sh newsletter
 
   wedlocks-tests:
     machine: true
@@ -155,7 +159,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh wedlocks $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh wedlocks $CIRCLE_BRANCH
       - run:
           name: Build wedlocks Image
           command: scripts/build-image.sh wedlocks
@@ -164,7 +168,8 @@ jobs:
           command: scripts/tests.sh wedlocks
 
   integration-tests:
-    machine: true
+    machine:
+      docker_layer_caching: true
     environment:
       DOCKER_REPOSITORY: unlockprotocol
     steps:
@@ -181,6 +186,7 @@ jobs:
           name: Log failing tests
           command: ./scripts/docker-compose-log.sh
           when: on_fail
+
   deploy-unlock-app-netlify:
     machine: true
     environment:
@@ -188,7 +194,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh unlock-app $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh unlock-app $CIRCLE_BRANCH
       - run:
           name: Set ENV_TARGET
           command: scripts/circleci/set-env-target.sh >> $BASH_ENV
@@ -209,7 +215,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh unlock-protocol-com $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh unlock-protocol.com $CIRCLE_BRANCH
       - run:
           name: Set IS_FORKED_PR
           command: scripts/circleci/set-is-forked-pull-request.sh >> $BASH_ENV
@@ -227,7 +233,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh paywall $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh paywall $CIRCLE_BRANCH
       - run:
           name: Set ENV_TARGET
           command: scripts/circleci/set-env-target.sh >> $BASH_ENV
@@ -248,7 +254,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh tickets $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh tickets $CIRCLE_BRANCH
       - run:
           name: Set ENV_TARGET
           command: scripts/circleci/set-env-target.sh >> $BASH_ENV
@@ -262,6 +268,27 @@ jobs:
           name: Deploy to Netlify
           command: scripts/deploy.sh "$ENV_TARGET" tickets netlify "$CIRCLE_SHA1" "$CIRCLE_BRANCH" "$IS_FORKED_PR"
 
+  deploy-newsletter-netlify:
+    machine: true
+    environment:
+      DOCKER_REPOSITORY: unlockprotocol
+    steps:
+      - checkout
+      - run:
+          command: scripts/monorepo.sh newsletter $CIRCLE_BRANCH
+      - run:
+          name: Set ENV_TARGET
+          command: scripts/circleci/set-env-target.sh >> $BASH_ENV
+      - run:
+          name: Set IS_FORKED_PR
+          command: scripts/circleci/set-is-forked-pull-request.sh >> $BASH_ENV
+      - run:
+          name: Build newsletter Image
+          command: scripts/build-image.sh newsletter
+      - run:
+          name: Deploy to Netlify
+          command: scripts/deploy.sh "$ENV_TARGET" newsletter netlify "$CIRCLE_SHA1" "$CIRCLE_BRANCH" "$IS_FORKED_PR"
+
   deploy-wedlocks-netlify:
     machine: true
     environment:
@@ -269,7 +296,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh wedlocks $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh wedlocks $CIRCLE_BRANCH
       - run:
           name: Set IS_FORKED_PR
           command: scripts/circleci/set-is-forked-pull-request.sh >> $BASH_ENV
@@ -287,7 +314,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: scripts/monorepo.sh locksmith $CIRCLE_SHA1 $CIRCLE_BRANCH
+          command: scripts/monorepo.sh locksmith $CIRCLE_BRANCH
       - run:
           name: Set IS_FORKED_PR
           command: ./scripts/circleci/set-is-forked-pull-request.sh >> $BASH_ENV
@@ -304,10 +331,10 @@ jobs:
           command: echo 'export GIT_COMMIT_DESC=$(git log --format=%B -n 1 "$CIRCLE_SHA1")' >> $BASH_ENV
       - run:
           name: Deploy Production to Beanstalk
-          command: locksmith/scripts/deploy-elasticbeanstalk-docker.sh "$APPLICATION" "$ENVIRONMENT" "$DB_USERNAME" "$DB_PASSWORD" "$DB_NAME" "$DB_HOSTNAME" "$NODE_ENV" "$IS_FORKED_PR" "$CIRCLE_SHA1" "$GIT_COMMIT_DESC" "$STRIPE_SECRET" "$PURCHASER_CREDENTIALS" "$WEB3_PROVIDER_HOST" "$UNLOCK_CONTRACT_ADDRESS"
+          command: locksmith/scripts/deploy-elasticbeanstalk-docker.sh "$APPLICATION" "$ENVIRONMENT" "$DB_USERNAME" "$DB_PASSWORD" "$DB_NAME" "$DB_HOSTNAME" "$NODE_ENV" "$IS_FORKED_PR" "$CIRCLE_SHA1" "$GIT_COMMIT_DESC" "$STRIPE_SECRET" "$PURCHASER_CREDENTIALS" "$WEB3_PROVIDER_HOST" "$UNLOCK_CONTRACT_ADDRESS" "$GRAPHQL_BASE_URL" "$METADATA_HOST"
       - run:
           name: Deploy Staging to Beanstalk
-          command: locksmith/scripts/deploy-elasticbeanstalk-docker.sh "$APPLICATION" "$LOCKSMITH_STAGING_ENVIRONMENT" "$LOCKSMITH_STAGING_DB_USERNAME" "$LOCKSMITH_STAGING_DB_PASSWORD" "$LOCKSMITH_STAGING_DB_NAME" "$LOCKSMITH_STAGING_DB_HOSTNAME" "$NODE_ENV" "$IS_FORKED_PR" "$CIRCLE_SHA1" "$GIT_COMMIT_DESC" "$LOCKSMITH_STAGING_STRIPE_SECRET" "$LOCKSMITH_STAGING_PURCHASER_CREDENTIALS" "$LOCKSMITH_STAGING_WEB3_PROVIDER_HOST" "$LOCKSMITH_STAGING_UNLOCK_CONTRACT_ADDRESS"
+          command: locksmith/scripts/deploy-elasticbeanstalk-docker.sh "$APPLICATION" "$LOCKSMITH_STAGING_ENVIRONMENT" "$LOCKSMITH_STAGING_DB_USERNAME" "$LOCKSMITH_STAGING_DB_PASSWORD" "$LOCKSMITH_STAGING_DB_NAME" "$LOCKSMITH_STAGING_DB_HOSTNAME" "$NODE_ENV" "$IS_FORKED_PR" "$CIRCLE_SHA1" "$GIT_COMMIT_DESC" "$LOCKSMITH_STAGING_STRIPE_SECRET" "$LOCKSMITH_STAGING_PURCHASER_CREDENTIALS" "$LOCKSMITH_STAGING_WEB3_PROVIDER_HOST" "$LOCKSMITH_STAGING_UNLOCK_CONTRACT_ADDRESS" "$LOCKSMITH_STAGING_GRAPHQL_BASE_URL" "$LOCKSMITH_STAGING_METADATA_HOST"
 
   promote-unlock-images:
     machine: true
@@ -340,18 +367,13 @@ workflows:
       - locksmith-tests
       - paywall-tests
       - tickets-tests
+      - newsletter-tests
       - smart-contracts-tests
       - unlock-protocol-com-tests
       - wedlocks-tests
       - unlock-app-tests
       - unlock-js-tests
       - rover-tests
-      - unlock-app-chromatic:
-          filters:
-            branches:
-              ignore: /production.*/
-          requires:
-            - unlock-app-tests
       - integration-tests:
           requires:
             - smart-contracts-tests
@@ -361,6 +383,7 @@ workflows:
             - paywall-tests
             - wedlocks-tests
             - tickets-tests
+            - newsletter-tests
       - deploy-unlock-app-netlify:
           requires:
             - integration-tests
@@ -368,6 +391,9 @@ workflows:
           requires:
             - integration-tests
       - deploy-tickets-netlify:
+          requires:
+            - integration-tests
+      - deploy-newsletter-netlify:
           requires:
             - integration-tests
       - deploy-unlock-protocol-com-netlify:

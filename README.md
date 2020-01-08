@@ -12,14 +12,11 @@ Read more about [why we're building Unlock](https://medium.com/unlock-protocol/i
 
 ## Demo
 
-We recorded a screencast to show how Unlock works for a paywall.
-
-[![Demo Unlock](https://img.youtube.com/vi/B1OVnU2Rw8A/0.jpg)](https://www.youtube.com/watch?v=B1OVnU2Rw8A)
-
 [You can try Unlock using the Ethereum blockchain on our homepage.](https://unlock-protocol.com/)
 
 We are building this in the open, which means you can also run the code locally (see instructions below).
-You can try out the staging version - which runs the latest, in-progress code - at [https://staging.unlock-protocol.com](https://staging.unlock-protocol.com).
+You can try out the staging version - which runs the latest, in-progress code, but against the Rinkeby test network - at [https://staging.unlock-protocol.com](https://staging.unlock-protocol.com).
+
 Finally, you can learn more [on our documentation wiki](https://github.com/unlock-protocol/unlock/wiki).
 
 ## Contributing
@@ -50,7 +47,7 @@ npm ci
 
 3. Set up your environment variables
 
-At the root of the repo, add a file names `.env.dev.local` which includes the following variables:
+At the root of the repo, add a file called `.env.dev.local` which includes the following variables and add your wallet address to the first line:
 
 ```
 ETHEREUM_ADDRESS=<your ethereum address>
@@ -63,7 +60,7 @@ PAYWALL_SCRIPT_URL=http://localhost:3001/static/paywall.min.js
 UNLOCK_STATIC_URL=http://localhost:3002
 UNLOCK_TICKETS_URL=http://0.0.0.0:3003
 ERC20_CONTRACT_SYMBOL=DAI
-ERC20_CONTRACT_ADDRESS=0x591AD9066603f5499d12fF4bC207e2f577448c46
+ERC20_CONTRACT_ADDRESS=0xFcD4FD1B4F3d5ceDdc19004579A5d7039295DBB9
 BOOTSTRAP_AMOUNT=15.0
 HTTP_PROVIDER_HOST=127.0.0.1
 HTTP_PROVIDER_PORT=8545
@@ -78,7 +75,7 @@ This will let you interract with the application using your regular setup.
 Once [docker has been installed](https://docs.docker.com/install/) on your machine, start the cluster:
 
 ```
-$ cd docker && docker-compose -f docker-compose.development.yml up --build
+$ cd docker && docker-compose up --build
 ```
 
 This cluster includes all the required "infrastructure" to run our apps locally (mostly ganache, which is an ethereum dev node.)
@@ -94,10 +91,11 @@ cd unlock-app && npm run dev
 
 ## Thank you
 
-[<img src="https://cdn-images-1.medium.com/letterbox/147/36/50/50/1*oHHjTjInDOBxIuYHDY2gFA.png?source=logoAvatar-d7276495b101---37816ec27d7a" alt="Chromatic Logo" width="120"/>](https://www.chromaticqa.com/)
-
-Thanks to [Chromatic](https://www.chromaticqa.com/) for providing the visual testing platform that help us catch unexpected changes on time.
-
 [<img src="https://user-images.githubusercontent.com/624104/52508260-d0daa180-2ba8-11e9-970c-3ef9596f6b4e.png" alt="BrowserStack Logo" width="120">](https://www.browserstack.com/)
 
 Thanks to [BrowserStack](https://www.browserstack.com/) for providing the infrastructure that allows us to test in real browsers.
+
+Thank you to all the Members of our lock as well!
+You can easily join this list by clicking on the ❤️ Sponsor button (it's free!) at the top of this page too.
+
+![Members](https://member-wall.julien51.now.sh/api/members?locks=0xB0114bbDCe17e0AF91b2Be32916a1e236cf6034F&maxWidth=1000)

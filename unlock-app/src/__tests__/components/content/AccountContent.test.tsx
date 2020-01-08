@@ -1,5 +1,5 @@
 import React from 'react'
-import * as rtl from 'react-testing-library'
+import * as rtl from '@testing-library/react'
 import { Provider } from 'react-redux'
 import createUnlockStore from '../../../createUnlockStore'
 import {
@@ -40,15 +40,17 @@ describe('AccountContent', () => {
       expect.assertions(0)
       const { getByText } = rtl.render(
         <Provider store={store}>
-          <AccountContent config={config} dismissPurchaseModal={() => true} />
+          <AccountContent
+            config={config}
+            dismissPurchaseModal={() => true}
+            pageIsLocked={false}
+          />
         </Provider>
       )
-      getByText((_, node) => {
-        return !!node.textContent && !!node.textContent.match('Log In')
-      })
+      getByText('Log In')
     })
 
-    it('Should collect payment details if there are no cards in account', () => {
+    it('Should show the message about already having a key if the page is unlocked after logging in', () => {
       expect.assertions(0)
 
       const { getByText } = rtl.render(
@@ -58,6 +60,25 @@ describe('AccountContent', () => {
             emailAddress="john@smi.th"
             cards={[]}
             dismissPurchaseModal={() => true}
+            pageIsLocked={false}
+          />
+        </Provider>
+      )
+
+      getByText('You already own a key to this lock!')
+    })
+
+    it('Should collect payment details if there are no cards in account and the page is locked', () => {
+      expect.assertions(0)
+
+      const { getByText } = rtl.render(
+        <Provider store={store}>
+          <AccountContent
+            config={config}
+            emailAddress="john@smi.th"
+            cards={[]}
+            dismissPurchaseModal={() => true}
+            pageIsLocked
           />
         </Provider>
       )
@@ -65,7 +86,7 @@ describe('AccountContent', () => {
       getByText('Card Details')
     })
 
-    it('Should prompt to confirm purchase if we have an account with cards', () => {
+    it('Should prompt to confirm purchase if we have an account with cards and the page is locked', () => {
       expect.assertions(0)
 
       const { getByText } = rtl.render(
@@ -75,6 +96,7 @@ describe('AccountContent', () => {
             emailAddress="john@smi.th"
             cards={[mockCard]}
             dismissPurchaseModal={() => true}
+            pageIsLocked
           />
         </Provider>
       )
@@ -94,6 +116,7 @@ describe('AccountContent', () => {
             emailAddress="john@smi.th"
             cards={[mockCard]}
             dismissPurchaseModal={dismissPurchaseModal}
+            pageIsLocked={false}
           />
         </Provider>
       )
@@ -109,11 +132,24 @@ describe('AccountContent', () => {
   })
 
   describe('mapStateToProps', () => {
-    it('should return empty object if no account in state', () => {
+    it('should return object without account if no account in state', () => {
       expect.assertions(2)
-      expect(mapStateToProps({})).toEqual({})
+      expect(
+        mapStateToProps({
+          pageIsLocked: false,
+        })
+      ).toEqual({
+        pageIsLocked: false,
+      })
       // or if state has an account with no contents
-      expect(mapStateToProps({ account: {} })).toEqual({})
+      expect(
+        mapStateToProps({
+          account: {},
+          pageIsLocked: false,
+        })
+      ).toEqual({
+        pageIsLocked: false,
+      })
     })
 
     it('should grab and pass email and cards from account if available', () => {
@@ -125,11 +161,13 @@ describe('AccountContent', () => {
           emailAddress,
           cards,
         },
+        pageIsLocked: true,
       }
 
       expect(mapStateToProps(state)).toEqual({
         emailAddress,
         cards,
+        pageIsLocked: true,
       })
     })
   })

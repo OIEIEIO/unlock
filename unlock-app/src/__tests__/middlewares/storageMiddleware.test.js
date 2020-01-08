@@ -1,31 +1,34 @@
 import { EventEmitter } from 'events'
-import { createAccountAndPasswordEncryptKey } from '@unlock-protocol/unlock-js'
-import storageMiddleware, {
-  changePassword,
-} from '../../middlewares/storageMiddleware'
-import { UPDATE_LOCK, updateLock, getLock } from '../../actions/lock'
+import * as unlockJs from '@unlock-protocol/unlock-js'
+import storageMiddleware from '../../middlewares/storageMiddleware'
 import { addTransaction, NEW_TRANSACTION } from '../../actions/transaction'
 import { SET_ACCOUNT, UPDATE_ACCOUNT } from '../../actions/accounts'
 import { startLoading, doneLoading } from '../../actions/loading'
+import { gotRecoveryPhrase } from '../../actions/recovery'
 import configure from '../../config'
 import {
   LOGIN_CREDENTIALS,
   SIGNUP_CREDENTIALS,
   GOT_ENCRYPTED_PRIVATE_KEY_PAYLOAD,
   setEncryptedPrivateKey,
-  SIGN_USER_DATA,
   SIGNED_USER_DATA,
   SIGNED_PAYMENT_DATA,
   GET_STORED_PAYMENT_DETAILS,
   SIGNED_PURCHASE_DATA,
   KEY_PURCHASE_INITIATED,
+  WELCOME_EMAIL,
+  gotEncryptedPrivateKeyPayload,
+  SET_ENCRYPTED_PRIVATE_KEY,
+  SIGNED_ACCOUNT_EJECTION,
 } from '../../actions/user'
 import { success, failure } from '../../services/storageService'
-import Error from '../../utils/Error'
+import { Storage } from '../../utils/Error'
 import { setError, SET_ERROR } from '../../actions/error'
 import { ADD_TO_CART, UPDATE_PRICE } from '../../actions/keyPurchase'
+import UnlockUser from '../../structured_data/unlockUser'
+import { GOT_BULK_METADATA } from '../../actions/keyMetadata'
 
-const { Storage } = Error
+jest.mock('@unlock-protocol/unlock-js')
 
 /**
  * This is a "fake" middleware caller
@@ -141,13 +144,12 @@ describe('Storage middleware', () => {
       }
       const action = { type: SET_ACCOUNT, account }
 
-      mockStorageService.getTransactionsHashesSentBy = jest.fn()
-      mockStorageService.getLockAddressesForUser = jest.fn()
+      mockStorageService.getRecentTransactionsHashesSentBy = jest.fn()
 
       invoke(action)
       expect(store.dispatch).toHaveBeenCalledWith(startLoading())
       expect(
-        mockStorageService.getTransactionsHashesSentBy
+        mockStorageService.getRecentTransactionsHashesSentBy
       ).toHaveBeenCalledWith(account.address)
       expect(next).toHaveBeenCalledTimes(1)
     })
@@ -193,61 +195,6 @@ describe('Storage middleware', () => {
         setError(Storage.Diagnostic('getTransactionHashesSentBy failed.'))
       )
       expect(store.dispatch).toHaveBeenNthCalledWith(2, doneLoading())
-    })
-
-    it('should get the locks for that user from the storageService', () => {
-      expect.assertions(2)
-      const { next, invoke } = create()
-      const account = {
-        address: '0x123',
-      }
-      const action = { type: SET_ACCOUNT, account }
-
-      mockStorageService.getLockAddressesForUser = jest.fn()
-      mockStorageService.getTransactionsHashesSentBy = jest.fn()
-
-      invoke(action)
-      expect(mockStorageService.getLockAddressesForUser).toHaveBeenCalledWith(
-        account.address
-      )
-      expect(next).toHaveBeenCalledTimes(1)
-    })
-  })
-
-  describe('handling UPDATE_LOCK', () => {
-    it('should call storageService', () => {
-      expect.assertions(2)
-      const { next, invoke } = create()
-      const action = { type: UPDATE_LOCK, address: lock.address, update: {} }
-      delete state.locks[lock.address].name
-
-      mockStorageService.lockLookUp = jest.fn()
-      invoke(action)
-      expect(mockStorageService.lockLookUp).toHaveBeenCalledWith(lock.address)
-      expect(next).toHaveBeenCalledTimes(1)
-    })
-
-    it('should get the name and pass it on', () => {
-      expect.assertions(1)
-      const { store } = create()
-      const address = '0x123'
-      const name =
-        'Shirley, Shirley Bo-ber-ley, bo-na-na fanna Fo-fer-ley. fee fi mo-mer-ley, Shirley!'
-
-      mockStorageService.emit(success.lockLookUp, { address, name })
-
-      expect(store.dispatch).toHaveBeenCalledWith(updateLock(address, { name }))
-    })
-
-    it('should handle failure events', () => {
-      expect.assertions(1)
-      const { store } = create()
-
-      mockStorageService.emit(failure.lockLookUp, 'Not enough vespene gas.')
-
-      expect(store.dispatch).toHaveBeenCalledWith(
-        setError(Storage.Diagnostic('Could not look up lock details.'))
-      )
     })
   })
 
@@ -333,6 +280,32 @@ describe('Storage middleware', () => {
     })
   })
 
+  describe('handling SIGNED_ACCOUNT_EJECTION', () => {
+    it('should call storageService to eject the user', () => {
+      expect.assertions(2)
+      const publicKey = '0x123'
+      const data = {
+        message: {
+          user: {
+            publicKey,
+          },
+        },
+      }
+      const sig = ''
+      const { next, invoke } = create()
+      const action = { type: SIGNED_ACCOUNT_EJECTION, data, sig }
+      mockStorageService.ejectUser = jest.fn()
+
+      invoke(action)
+      expect(mockStorageService.ejectUser).toHaveBeenCalledWith(
+        publicKey,
+        data,
+        sig
+      )
+      expect(next).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('handling SIGNED_PURCHASE_DATA', () => {
     it('should call storageService to request a key purchase', () => {
       expect.assertions(2)
@@ -380,10 +353,22 @@ describe('Storage middleware', () => {
   })
 
   describe('SIGNUP_CREDENTIALS', () => {
-    it('should call storageService', done => {
-      expect.assertions(4)
-      const emailAddress = 'tim@cern.ch'
-      const password = 'guest'
+    const password = 'password'
+    const passwordEncryptedPrivateKey = {}
+    const emailAddress = 'tim@cern.ch'
+    const publicKey = '0xabc'
+    const accountInfo = { address: publicKey, passwordEncryptedPrivateKey }
+    const user = {}
+
+    beforeEach(() => {
+      unlockJs.createAccountAndPasswordEncryptKey = jest.fn(() =>
+        Promise.resolve(accountInfo)
+      )
+      UnlockUser.build = jest.fn(() => user)
+    })
+
+    it('should call storageService with the right object', async () => {
+      expect.assertions(3)
       const { next, invoke } = create()
 
       const action = {
@@ -392,45 +377,60 @@ describe('Storage middleware', () => {
         password,
       }
 
-      mockStorageService.createUser = user => {
-        // These properties will be undefined if async call is used incorrectly.
-        const {
-          emailAddress,
-          publicKey,
-          passwordEncryptedPrivateKey,
-        } = user.message.user
-        expect(emailAddress).toBeDefined()
-        expect(publicKey).toBeDefined()
-        expect(passwordEncryptedPrivateKey).toBeDefined()
-        done()
-      }
+      mockStorageService.createUser = jest.fn()
 
-      invoke(action)
-
+      await invoke(action)
+      expect(UnlockUser.build).toHaveBeenCalledWith({
+        emailAddress,
+        publicKey,
+        passwordEncryptedPrivateKey,
+      })
+      expect(mockStorageService.createUser).toHaveBeenCalledWith(
+        user,
+        emailAddress,
+        password
+      )
       expect(next).toHaveBeenCalledTimes(1)
     })
 
-    it('should dispatch gotEncryptedPrivateKeyPayload after an account is created', () => {
-      expect.assertions(1)
-      const { store } = create()
+    describe('success', () => {
+      it('should dispatch setEncryptedPrivateKey, gotEncryptedPrivateKeyPayload, and welcomeEmail after an account is created', async () => {
+        expect.assertions(3)
+        const { store } = create()
 
-      const passwordEncryptedPrivateKey = {
-        id: 'this is the encrypted key',
-      }
-      const emailAddress = 'paul@bunyan.io'
-      const password = 'guest'
+        const passwordEncryptedPrivateKey = {
+          id: 'this is the encrypted key',
+        }
+        const emailAddress = 'paul@bunyan.io'
+        const password = 'guest'
+        const recoveryKey = {}
 
-      mockStorageService.emit(success.createUser, {
-        passwordEncryptedPrivateKey,
-        emailAddress,
-        password,
-      })
+        unlockJs.reEncryptPrivateKey = jest.fn(() =>
+          Promise.resolve(recoveryKey)
+        )
 
-      expect(store.dispatch).toHaveBeenCalledWith({
-        type: GOT_ENCRYPTED_PRIVATE_KEY_PAYLOAD,
-        key: passwordEncryptedPrivateKey,
-        emailAddress,
-        password,
+        await mockStorageService.emit(success.createUser, {
+          passwordEncryptedPrivateKey,
+          emailAddress,
+          password,
+        })
+
+        expect(store.dispatch).toHaveBeenNthCalledWith(3, {
+          type: SET_ENCRYPTED_PRIVATE_KEY,
+          key: passwordEncryptedPrivateKey,
+          emailAddress,
+        })
+        expect(store.dispatch).toHaveBeenNthCalledWith(2, {
+          type: GOT_ENCRYPTED_PRIVATE_KEY_PAYLOAD,
+          key: passwordEncryptedPrivateKey,
+          emailAddress,
+          password,
+        })
+        expect(store.dispatch).toHaveBeenNthCalledWith(1, {
+          type: WELCOME_EMAIL,
+          emailAddress,
+          recoveryKey,
+        })
       })
     })
 
@@ -453,12 +453,9 @@ describe('Storage middleware', () => {
     const emailAddress = 'tim@cern.ch'
     const password = 'guest'
     let key
-    beforeEach(async () => {
-      const info = await createAccountAndPasswordEncryptKey(password)
-      key = info.passwordEncryptedPrivateKey
-    })
+
     it('should dispatch the payload when it can get an encrypted private key', () => {
-      expect.assertions(4)
+      expect.assertions(5)
       const { next, invoke, store } = create()
 
       const action = {
@@ -473,7 +470,8 @@ describe('Storage middleware', () => {
 
       invoke(action)
       expect(mockStorageService.getUserPrivateKey).toHaveBeenCalled()
-      expect(store.dispatch).toHaveBeenCalledWith(
+      expect(store.dispatch).toHaveBeenNthCalledWith(
+        1,
         expect.objectContaining({
           type: GOT_ENCRYPTED_PRIVATE_KEY_PAYLOAD,
           key,
@@ -481,7 +479,15 @@ describe('Storage middleware', () => {
           password,
         })
       )
-      expect(store.dispatch).toHaveBeenCalledTimes(1)
+      expect(store.dispatch).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          type: SET_ENCRYPTED_PRIVATE_KEY,
+          key,
+          emailAddress,
+        })
+      )
+      expect(store.dispatch).toHaveBeenCalledTimes(2)
       expect(next).toHaveBeenCalledTimes(1)
     })
 
@@ -499,56 +505,6 @@ describe('Storage middleware', () => {
         setError(Storage.Warning('Could not find this user account.'))
       )
       expect(store.dispatch).toHaveBeenCalledTimes(1)
-    })
-  })
-
-  describe('CHANGE_PASSWORD', () => {
-    const encryptedPrivateKey = {
-      version: 3,
-      id: 'edbe0942-593b-4027-8688-07b7d3ec56c5',
-      address: '0272742cbe9b4d4c81cffe8dfc0c33b5fb8893e5',
-      crypto: {
-        ciphertext:
-          '6f2a3ed499a2962cc48e6f7f0a90a0c817c83024cc4878f624ad251fccd0b706',
-        cipherparams: { iv: '69f031944591eed34c4d4f5841d283b0' },
-        cipher: 'aes-128-ctr',
-        kdf: 'scrypt',
-        kdfparams: {
-          dklen: 32,
-          salt:
-            '5ac866336768f9613a505acd18dab463f4d10152ffefba5772125f5807539c36',
-          n: 8192,
-          r: 8,
-          p: 1,
-        },
-        mac: 'cc8efad3b534336ecffc0dbf6f51fd558301873d322edc6cbc1c9398ee0953ec',
-      },
-    }
-    const oldPassword = 'guest'
-
-    it('should dispatch a new user object to be signed', async () => {
-      expect.assertions(1)
-      const dispatch = jest.fn()
-      const emailAddress = 'zapp@brannigan.io'
-      const storageService = {
-        getUserPrivateKey: async () => {
-          return encryptedPrivateKey
-        },
-      }
-
-      await changePassword({
-        oldPassword,
-        newPassword: 'visitor',
-        emailAddress,
-        storageService,
-        dispatch,
-      })
-
-      expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: SIGN_USER_DATA,
-        })
-      )
     })
   })
 
@@ -627,20 +583,6 @@ describe('Storage middleware', () => {
     })
   })
 
-  describe('getLockAddressesForUser', () => {
-    it('should handle success', () => {
-      expect.assertions(2)
-      const { store } = create()
-      const addresses = ['0x123', '0x456']
-
-      mockStorageService.emit(success.getLockAddressesForUser, addresses)
-
-      addresses.forEach(address => {
-        expect(store.dispatch).toHaveBeenCalledWith(getLock(address))
-      })
-    })
-  })
-
   describe('ADD_TO_CART', () => {
     it('should get the key price', () => {
       expect.assertions(1)
@@ -693,6 +635,105 @@ describe('Storage middleware', () => {
           kind: 'Storage',
           level: 'Warning',
           message: 'Unable to get dollar-denominated key price from server.',
+        },
+      })
+    })
+  })
+
+  describe('when starting on the recovery page', () => {
+    let email = 'julien@unlock-protocol.com'
+    let recoveryKey = {}
+    let recoveryPhrase = 'recoveryPhrase'
+
+    beforeEach(() => {
+      state.router = {
+        location: {
+          pathname: '/recover/',
+          search: `?email=${email}&recoveryKey=${JSON.stringify(recoveryKey)}`,
+        },
+      }
+      mockStorageService = new MockStorageService()
+      mockStorageService.getUserRecoveryPhrase = jest.fn()
+    })
+
+    it('should get the user recovery phrase', () => {
+      expect.assertions(1)
+      create()
+      expect(mockStorageService.getUserRecoveryPhrase).toHaveBeenCalledWith(
+        email
+      )
+    })
+
+    describe('when the recovery phrase was successfully retrieved', () => {
+      it('should dispatch gotRecoveryPhrase and gotEncryptedPrivateKeyPayload', () => {
+        expect.assertions(2)
+        const { store } = create()
+
+        mockStorageService.emit(success.getUserRecoveryPhrase, {
+          recoveryPhrase,
+        })
+
+        expect(store.dispatch).toHaveBeenNthCalledWith(
+          1,
+          gotRecoveryPhrase(recoveryPhrase)
+        )
+        expect(store.dispatch).toHaveBeenNthCalledWith(
+          2,
+          gotEncryptedPrivateKeyPayload(recoveryKey, email, recoveryPhrase)
+        )
+      })
+    })
+
+    describe('when the recovery phrase could not be retrieved', () => {
+      it('should dispatch setError', () => {
+        expect.assertions(1)
+        const { store } = create()
+
+        mockStorageService.emit(failure.getUserRecoveryPhrase, {
+          recoveryPhrase,
+        })
+
+        expect(store.dispatch).toHaveBeenNthCalledWith(
+          1,
+          setError(Storage.Warning('Could not initiate account recovery.'))
+        )
+      })
+    })
+  })
+
+  describe('Key metadata', () => {
+    const lockAddress = 'an address'
+    const data = 'some data'
+    it('should dispatch a message when a request succeeds', () => {
+      expect.assertions(1)
+
+      const { store } = create()
+
+      mockStorageService.emit(success.getBulkMetadataFor, lockAddress, data)
+
+      expect(store.dispatch).toHaveBeenCalledWith({
+        type: GOT_BULK_METADATA,
+        lockAddress,
+        data,
+      })
+    })
+
+    it('should dispatch an error when a request fails', () => {
+      expect.assertions(1)
+
+      const { store } = create()
+
+      mockStorageService.emit(
+        failure.getBulkMetadataFor,
+        new Error('something broke')
+      )
+
+      expect(store.dispatch).toHaveBeenCalledWith({
+        type: SET_ERROR,
+        error: {
+          kind: 'Storage',
+          level: 'Diagnostic',
+          message: 'Could not get bulk metadata: something broke',
         },
       })
     })

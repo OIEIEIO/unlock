@@ -10,6 +10,7 @@ export const ETHEREUM_NETWORKS_NAMES: { [id: number]: string[] } = {
   2: ['Morden', 'staging'],
   3: ['Ropsten', 'staging'],
   4: ['Rinkeby', 'staging'],
+  42: ['Kovan', 'staging'],
   1984: ['Winston', 'test'],
 }
 
@@ -78,10 +79,6 @@ export const MONTH_NAMES = [
   'Dec',
 ]
 
-// constants related to pagination
-export const PGN_ITEMS_PER_PAGE = 5
-export const PGN_MAX_NUMBER_OF_PAGES_TO_SHOW_ALL = 10
-
 export const MAX_DEVICE_WIDTHS = {
   PHONE: 736,
   TABLET: 1000,
@@ -100,8 +97,14 @@ export const MAX_UINT =
   '115792089237316195423570985008687907853269984665640564039457584007913129639935'
 
 // the number of ms between checking for account changes in walletService
-export const POLLING_INTERVAL = 2000
+export const ACCOUNT_POLLING_INTERVAL = 2000
 
 export const CURRENCY_CONVERSION_MIDDLEWARE_RETRY_INTERVAL = 10000
 
 export const USER_ACCOUNT_ADDRESS_STORAGE_ID = 'managedUserAccountAddress'
+
+// This represents an account that will never hold any keys. It's a bit of an
+// ugly hack, but it allows us to initialize the paywall without asking a user
+// to log in and without granting any unauthorized access.
+export const DEFAULT_USER_ACCOUNT_ADDRESS =
+  '0x0000000000000000000000000000000000000000'

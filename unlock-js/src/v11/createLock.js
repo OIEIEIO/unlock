@@ -28,9 +28,9 @@ async function _getKeyPrice(lock, provider) {
 /**
  * Creates a lock on behalf of the user, using version v11
  * @param {PropTypes.lock} lock
- * @param {PropTypes.address} owner
+ * @param {function} callback invoked with the transaction hash
  */
-export default async function(lock, owner) {
+export default async function(lock, callback) {
   const unlockContract = await this.getUnlockContract()
   let maxNumberOfKeys = lock.maxNumberOfKeys
   if (maxNumberOfKeys === UNLIMITED_KEYS_COUNT) {
@@ -41,41 +41,54 @@ export default async function(lock, owner) {
 
   let currencyContractAddress = lock.currencyContractAddress || ZERO
 
-  let transactionPromise
-  try {
-    const lockName = lock.name || 'New Lock'
-    transactionPromise = unlockContract.functions[
-      'createLock(uint256,address,uint256,uint256,string)'
-    ](
-      lock.expirationDuration,
-      currencyContractAddress, // ERC20 address, 0 is for eth
-      decimalKeyPrice, // FIX ME!
-      maxNumberOfKeys,
-      lockName,
-      {
-        gasLimit: GAS_AMOUNTS.createLock, // overrides default value for transaction gas price
-      }
-    )
-    const hash = await this._handleMethodCall(
-      transactionPromise,
-      TransactionTypes.LOCK_CREATION
-    )
+  const lockName = lock.name || 'New Lock'
+  const transactionPromise = unlockContract.functions[
+    'createLock(uint256,address,uint256,uint256,string)'
+  ](
+    lock.expirationDuration,
+    currencyContractAddress,
+    decimalKeyPrice,
+    maxNumberOfKeys,
+    lockName,
+    {
+      gasLimit: GAS_AMOUNTS.createLock,
+    }
+  )
+  const hash = await this._handleMethodCall(
+    transactionPromise,
+    TransactionTypes.LOCK_CREATION
+  )
 
-    // Let's update the lock to reflect that it is linked to this
-    // This is an exception because, until we are able to determine the lock address
-    // before the transaction is mined, we need to link the lock and transaction.
-    this.emit('lock.updated', lock.address, {
-      expirationDuration: lock.expirationDuration,
-      keyPrice: lock.keyPrice, // Must be expressed in Eth!
-      maxNumberOfKeys: lock.maxNumberOfKeys,
-      owner: owner,
-      outstandingKeys: 0,
-      balance: '0',
-      transaction: hash,
-      name: lockName,
-      currencyContractAddress: lock.currencyContractAddress,
+  if (callback) {
+    callback(null, hash)
+  }
+
+  // Let's update the lock to reflect that it is linked to this
+  // This is an exception because, until we are able to determine the lock address
+  // before the transaction is mined, we need to link the lock and transaction.
+  this.emit('lock.updated', lock.address, {
+    expirationDuration: lock.expirationDuration,
+    keyPrice: lock.keyPrice, // Must be expressed in Eth!
+    maxNumberOfKeys: lock.maxNumberOfKeys,
+    outstandingKeys: 0,
+    balance: '0',
+    transaction: hash,
+    name: lockName,
+    currencyContractAddress: lock.currencyContractAddress,
+  })
+  // Let's now wait for the lock to be deployed before we return its address
+  const receipt = await this.provider.waitForTransaction(hash)
+  const parser = unlockContract.interface
+  const newLockEvent = receipt.logs
+    .map(log => {
+      return parser.parseLog(log)
     })
-  } catch (error) {
-    this.emit('error', new Error(TransactionTypes.FAILED_TO_CREATE_LOCK))
+    .filter(event => event.name === 'NewLock')[0]
+
+  if (newLockEvent) {
+    return newLockEvent.values.newLockAddress
+  } else {
+    // There was no NewEvent log (transaction failed?)
+    return null
   }
 }

@@ -1,9 +1,10 @@
-import startup, { normalizeConfig } from '../../unlock.js/startup'
+import { startup, normalizeConfig } from '../../unlock.js/startup'
 import FakeWindow from '../test-helpers/fakeWindowHelpers'
 import StartupConstants from '../../unlock.js/startupTypes'
 import { PaywallConfig } from '../../unlockTypes'
 import { PostMessages } from '../../messageTypes'
 import { UnlockWindow } from '../../windowTypes'
+import { checkoutHandlerInit } from '../../unlock.js/postMessageHub'
 
 describe('unlock.js startup', () => {
   describe('normalizeConfig', () => {
@@ -33,6 +34,7 @@ describe('unlock.js startup', () => {
           expired: 'there',
           pending: 'pending',
           confirmed: 'confirmed',
+          noWallet: 'no wallet',
         },
       }
       const normalizedConfig = {
@@ -61,6 +63,7 @@ describe('unlock.js startup', () => {
         expired: 'there',
         pending: 'pending',
         confirmed: 'confirmed',
+        noWallet: 'no wallet',
       },
     }
 
@@ -77,6 +80,7 @@ describe('unlock.js startup', () => {
       debug: 0,
       paywallUrl: 'http://paywall',
       accountsUrl: 'http://app/account',
+      erc20ContractAddress: '0xFcD4FD1B4F3d5ceDdc19004579A5d7039295DBB9',
     }
     const dataOrigin = 'http://paywall'
     const checkoutOrigin = 'http://paywall'
@@ -99,14 +103,10 @@ describe('unlock.js startup', () => {
       expect.assertions(1)
 
       fakeWindow.unlockProtocolConfig = config
+      fakeWindow.web3 = { currentProvider: {} }
       const iframes = startup(fakeWindow, constants)
 
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.READY,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
+      iframes.data.emit(PostMessages.READY)
 
       await fakeWindow.waitForPostMessageToIframe(iframes.data.iframe)
 
@@ -161,7 +161,16 @@ describe('unlock.js startup', () => {
       expect.assertions(1)
 
       fakeWindow.unlockProtocolConfig = config
+      fakeWindow.web3 = { currentProvider: {} }
       const iframes = startup(fakeWindow, constants)
+
+      checkoutHandlerInit({
+        usingManagedAccount: false,
+        dataIframe: iframes.data,
+        checkoutIframe: iframes.checkout,
+        config,
+        constants,
+      })
 
       fakeWindow.receivePostMessageFromIframe(
         PostMessages.READY,
@@ -189,12 +198,7 @@ describe('unlock.js startup', () => {
       fakeWindow.makeWeb3()
       const iframes = startup(fakeWindow, constants)
 
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.READY_WEB3,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
+      iframes.data.emit(PostMessages.READY_WEB3)
 
       await fakeWindow.waitForPostMessageToIframe(iframes.data.iframe)
 
@@ -220,12 +224,7 @@ describe('unlock.js startup', () => {
       }
       const iframes = startup(fakeWindow, constants)
 
-      fakeWindow.receivePostMessageFromIframe(
-        PostMessages.READY_WEB3,
-        undefined,
-        iframes.data.iframe,
-        dataOrigin
-      )
+      iframes.data.emit(PostMessages.READY_WEB3)
 
       expect(
         ((fakeWindow as unknown) as UnlockWindow).unlockProtocol

@@ -3,18 +3,14 @@ import {
   PostOfficeEvents,
 } from '../../services/postOfficeService'
 import { IframePostOfficeWindow } from '../../utils/postOffice'
-import { PostMessages, ExtractPayload } from '../../messageTypes'
+import { PostMessages } from '../../messageTypes'
 import { Locks } from '../../unlockTypes'
 
 describe('postOfficeService', () => {
   let mockService: PostOfficeService
   let fakeWindow: IframePostOfficeWindow
 
-  function expectPostMessage<T>(
-    type: T,
-    payload: ExtractPayload<T>,
-    index = 1
-  ) {
+  function expectPostMessage(type: any, payload: any, index = 1) {
     expect(fakeWindow.parent.postMessage).toHaveBeenNthCalledWith(
       index,
       {
@@ -25,7 +21,7 @@ describe('postOfficeService', () => {
     )
   }
 
-  function triggerListener<T>(type: T, payload: ExtractPayload<T>) {
+  function triggerListener(type: any, payload: any) {
     const first: any = fakeWindow.addEventListener
     const listener = first.mock.calls[0][1]
 
@@ -41,13 +37,13 @@ describe('postOfficeService', () => {
     })
   }
 
-  function expectListenerRespondsWith<T, U>(
-    type: T,
-    payload: ExtractPayload<T>,
-    sendType: U,
-    sendPayload: ExtractPayload<U>
+  function expectListenerRespondsWith(
+    type: any,
+    payload: any,
+    sendType: any,
+    sendPayload: any
   ) {
-    triggerListener<T>(type, payload)
+    triggerListener(type, payload)
 
     expect(fakeWindow.parent.postMessage).toHaveBeenCalledWith(
       {
@@ -82,18 +78,33 @@ describe('postOfficeService', () => {
 
       mockService = new PostOfficeService(fakeWindow, 2)
 
-      expectPostMessage<PostMessages.READY>(PostMessages.READY, undefined)
+      expectPostMessage(PostMessages.READY, undefined)
     })
 
-    it('should add a handler for PostMessages.SEND_UPDATES', () => {
+    it('should add a handler for PostMessages.SEND_UPDATES (account)', () => {
       expect.assertions(1)
 
       mockService = new PostOfficeService(fakeWindow, 2)
 
-      expectListenerRespondsWith<
+      expectListenerRespondsWith(
         PostMessages.SEND_UPDATES,
-        PostMessages.UPDATE_ACCOUNT
-      >(PostMessages.SEND_UPDATES, 'account', PostMessages.UPDATE_ACCOUNT, null)
+        'account',
+        PostMessages.UPDATE_ACCOUNT,
+        null
+      )
+    })
+
+    it('should add a handler for PostMessages.SEND_UPDATES (network)', () => {
+      expect.assertions(1)
+
+      mockService = new PostOfficeService(fakeWindow, 2)
+
+      expectListenerRespondsWith(
+        PostMessages.SEND_UPDATES,
+        'network',
+        PostMessages.UPDATE_NETWORK,
+        2
+      )
     })
 
     it('should add a handler for PostMessages.UPDATE_LOCKS', done => {
@@ -140,10 +151,7 @@ describe('postOfficeService', () => {
         done()
       })
 
-      triggerListener<PostMessages.UPDATE_LOCKS>(
-        PostMessages.UPDATE_LOCKS,
-        fakeLocks
-      )
+      triggerListener(PostMessages.UPDATE_LOCKS, fakeLocks)
     })
 
     it('should error if invalid locks are passed to PostMessages.UPDATE_LOCKS', done => {
@@ -188,7 +196,7 @@ describe('postOfficeService', () => {
         done()
       })
 
-      triggerListener<PostMessages.UPDATE_LOCKS>(
+      triggerListener(
         PostMessages.UPDATE_LOCKS,
         (fakeLocks as unknown) as Locks // override types to test invalid case
       )
@@ -206,10 +214,36 @@ describe('postOfficeService', () => {
         expect(extraTip).toBe('0')
       })
 
-      triggerListener<PostMessages.PURCHASE_KEY>(PostMessages.PURCHASE_KEY, {
+      triggerListener(PostMessages.PURCHASE_KEY, {
         lock: lockAddress,
         extraTip: '0',
       })
+    })
+
+    it('should add a handler for PostMessages.LOCKED', () => {
+      expect.assertions(1)
+
+      mockService = new PostOfficeService(fakeWindow, 2)
+
+      mockService.on(PostOfficeEvents.Locked, () => {
+        // Just verifying that this event is triggered
+        expect(true).toBeTruthy()
+      })
+
+      triggerListener(PostMessages.LOCKED, undefined)
+    })
+
+    it('should add a handler for PostMessages.UNLOCKED', () => {
+      expect.assertions(1)
+
+      mockService = new PostOfficeService(fakeWindow, 2)
+
+      mockService.on(PostOfficeEvents.Unlocked, () => {
+        // Just verifying that this event is triggered
+        expect(true).toBeTruthy()
+      })
+
+      triggerListener(PostMessages.UNLOCKED, undefined)
     })
 
     it('should error if an invalid lock address is passed to PostMessages.PURCHASE_KEY', () => {
@@ -223,7 +257,7 @@ describe('postOfficeService', () => {
         expect(error).toBe('invalid lock, cannot purchase a key')
       })
 
-      triggerListener<PostMessages.PURCHASE_KEY>(PostMessages.PURCHASE_KEY, {
+      triggerListener(PostMessages.PURCHASE_KEY, {
         lock: lockAddress,
         extraTip: '0',
       })
@@ -242,10 +276,7 @@ describe('postOfficeService', () => {
 
       mockService.setAccount('hi')
 
-      expectPostMessage<PostMessages.UPDATE_ACCOUNT>(
-        PostMessages.UPDATE_ACCOUNT,
-        'hi'
-      )
+      expectPostMessage(PostMessages.UPDATE_ACCOUNT, 'hi')
     })
 
     it('should trigger show of the accounts modal if the user is not logged in', () => {
@@ -253,7 +284,7 @@ describe('postOfficeService', () => {
 
       mockService.setAccount(null)
 
-      expectPostMessage<PostMessages.SHOW_ACCOUNTS_MODAL>(
+      expectPostMessage(
         PostMessages.SHOW_ACCOUNTS_MODAL,
         undefined,
         2 /* which call to postMessage */
@@ -272,11 +303,7 @@ describe('postOfficeService', () => {
 
       mockService.showAccountModal()
 
-      expectPostMessage<PostMessages.SHOW_ACCOUNTS_MODAL>(
-        PostMessages.SHOW_ACCOUNTS_MODAL,
-        undefined,
-        2
-      )
+      expectPostMessage(PostMessages.SHOW_ACCOUNTS_MODAL, undefined, 2)
     })
 
     it('should send a request to hide the accounts modal when hideAccountModal is called', () => {
@@ -284,11 +311,7 @@ describe('postOfficeService', () => {
 
       mockService.hideAccountModal()
 
-      expectPostMessage<PostMessages.HIDE_ACCOUNTS_MODAL>(
-        PostMessages.HIDE_ACCOUNTS_MODAL,
-        undefined,
-        2
-      )
+      expectPostMessage(PostMessages.HIDE_ACCOUNTS_MODAL, undefined, 2)
     })
 
     it('should send a key purchase transaction initiated when transactionInitiated is called', () => {
@@ -296,11 +319,7 @@ describe('postOfficeService', () => {
 
       mockService.transactionInitiated()
 
-      expectPostMessage<PostMessages.INITIATED_TRANSACTION>(
-        PostMessages.INITIATED_TRANSACTION,
-        undefined,
-        2
-      )
+      expectPostMessage(PostMessages.INITIATED_TRANSACTION, undefined, 2)
     })
   })
 })

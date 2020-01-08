@@ -91,6 +91,7 @@ describe('BlockchainHandler class setup', () => {
           expired: '',
           pending: '',
           confirmed: '',
+          noWallet: '',
         },
       },
       account: null,
@@ -141,6 +142,36 @@ describe('BlockchainHandler class setup', () => {
       expect(defaults.store.balance[update.currencyContractAddress]).toEqual(
         erc20Balance
       )
+    })
+  })
+
+  describe('_reset', () => {
+    let handler: BlockchainHandler
+    beforeEach(async () => {
+      handler = await callSetupBlockchainHandler()
+    })
+
+    it('resets the keys to default keys', () => {
+      expect.assertions(1)
+      ;(handler as any).store.keys = {}
+      handler._reset()
+      expect((handler as any).store.keys).toEqual(
+        makeDefaultKeys(lockAddresses, null)
+      )
+    })
+
+    it('fetches token balances for erc20 locks if there is an account set', () => {
+      expect.assertions(1)
+      ;(handler as any).store.locks = {
+        '0x123abc': {
+          currencyContractAddress: '205 Hudson Street',
+        },
+      }
+      ;(handler as any).store.account = '0xdeadb33f'
+      const mock = jest.fn()
+      ;(handler as any).getTokenBalance = mock
+      handler._reset()
+      expect(mock).toHaveBeenCalledWith('205 Hudson Street')
     })
   })
 
