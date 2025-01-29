@@ -1,33 +1,26 @@
-const Units = require('ethereumjs-units')
-const BigNumber = require('bignumber.js')
-const deployLocks = require('../helpers/deployLocks')
+const assert = require('assert')
+const { ethers } = require('hardhat')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../helpers/proxy')
+const { deployLock, ADDRESS_ZERO } = require('../helpers')
 const WalletService = require('../helpers/walletServiceMock.js')
 
-let unlock, lock
-
-contract('Lock / gas', accounts => {
-  beforeEach(async () => {
-    unlock = await getProxy(unlockContract)
-    const locks = await deployLocks(unlock, accounts[0])
-    lock = locks['FIRST']
-  })
-
+describe('Lock / gas', () => {
   it('gas used to purchaseFor is less than wallet service limit', async () => {
+    const lock = await deployLock()
+    const [signer] = await ethers.getSigners()
     let tx = await lock.purchase(
-      0,
-      accounts[0],
-      web3.utils.padLeft(0, 40),
       [],
+      [await signer.getAddress()],
+      [ADDRESS_ZERO],
+      [ADDRESS_ZERO],
+      ['0x'],
       {
-        value: Units.convert('0.01', 'eth', 'wei'),
+        value: ethers.parseUnits('0.01', 'ether'),
       }
     )
-    const gasUsed = new BigNumber(tx.receipt.gasUsed)
+    const { gasUsed } = await tx.wait()
     if (!process.env.TEST_COVERAGE) {
-      assert(gasUsed.lte(WalletService.gasAmountConstants().purchaseKey))
+      assert(gasUsed <= WalletService.gasAmountConstants().purchaseKey)
     }
   })
 })

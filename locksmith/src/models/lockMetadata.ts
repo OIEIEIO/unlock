@@ -1,10 +1,48 @@
-import { Table, Model, Column, DataType } from 'sequelize-typescript'
-@Table({ tableName: 'LockMetadata', timestamps: true })
-// eslint-disable-next-line import/prefer-default-export
-export class LockMetadata extends Model<LockMetadata> {
-  @Column(DataType.JSON)
-  data!: JSON
+import type {
+  CreationOptional,
+  InferAttributes,
+  InferCreationAttributes,
+} from 'sequelize'
+import { Model, DataTypes } from 'sequelize'
+import { LocksmithDataTypes, sequelize } from './sequelize'
 
-  @Column({ primaryKey: true })
-  address!: string
+export class LockMetadata extends Model<
+  InferAttributes<LockMetadata>,
+  InferCreationAttributes<LockMetadata>
+> {
+  declare data: any
+  declare address: string
+  declare chain: number
+  declare createdAt: CreationOptional<Date>
+  declare updatedAt: CreationOptional<Date>
 }
+
+LockMetadata.init(
+  {
+    address: {
+      allowNull: false,
+      primaryKey: true,
+      type: DataTypes.STRING,
+    },
+    data: {
+      allowNull: false,
+      type: DataTypes.JSON,
+    },
+    chain: {
+      allowNull: false,
+      type: LocksmithDataTypes.NETWORK_ID,
+    },
+    createdAt: {
+      allowNull: false,
+      type: DataTypes.DATE,
+    },
+    updatedAt: {
+      allowNull: false,
+      type: DataTypes.DATE,
+    },
+  },
+  {
+    sequelize,
+    modelName: 'LockMetadata',
+  }
+)

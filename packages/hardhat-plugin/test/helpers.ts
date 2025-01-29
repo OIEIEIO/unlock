@@ -1,0 +1,49 @@
+import '../src/type-extensions'
+
+import { HardhatRuntimeEnvironment } from 'hardhat/types'
+import { assert } from 'chai'
+import path from 'path'
+
+import { resetHardhatContext } from 'hardhat/plugins-testing'
+
+declare module 'mocha' {
+  interface Context {
+    hre: HardhatRuntimeEnvironment
+  }
+}
+
+/**
+ * Takes in a function and checks for error
+ * @param {Function} method - The function to check
+ * @param {any[]} params - The array of function parameters
+ * @param {string} message - Optional message to match with error message
+ */
+export async function expectThrowsAsync<T>(
+  method: (...params: T[]) => Promise<unknown>,
+  params: T[],
+  message?: string
+): Promise<any> {
+  let err: unknown | Error
+  try {
+    await method(...params)
+  } catch (error) {
+    err = error
+  }
+  if (err && err instanceof Error) {
+    assert.equal(err.message, message)
+  } else {
+    assert.equal(typeof err, 'Error')
+  }
+}
+
+export function useEnvironment(fixtureProjectName: string) {
+  beforeEach(function () {
+    process.chdir(path.join(__dirname, 'fixture-projects', fixtureProjectName))
+
+    this.hre = require('hardhat')
+  })
+
+  afterEach(function () {
+    resetHardhatContext()
+  })
+}

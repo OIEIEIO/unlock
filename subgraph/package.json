@@ -1,0 +1,45 @@
+{
+  "name": "@unlock-protocol/subgraph",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "yarn introspect && yarn prepare && node bin/thegraph build",
+    "check": "node bin/check.js",
+    "ci": "yarn prepare:abis && yarn copy:manifest && graph codegen && yarn test -l",
+    "clean": "rm -rf abis networks.json build generated",
+    "copy:manifest": "rm -rf subgraph.yaml && cp ../tests/subgraph.test.yaml subgraph.yaml",
+    "copy:networks": "rm -rf networks.json && cp ../docker/development/eth-node/networks.json networks.json",
+    "deploy-all": "node bin/thegraph deploy-all",
+    "deploy": "node bin/thegraph deploy",
+    "generate-manifest": "mustache config/\"$@\" subgraph.template.yaml > subgraph.yaml && graph codegen",
+    "introspect:local": "INTROSPECT_NETWORK=31337 node bin/introspect.js",
+    "introspect": "/bin/sh -c 'if test \"$CI\" != \"true\" ; then node bin/introspect.js; fi'",
+    "lint": "eslint",
+    "prepare:abis": "node -e 'require(\"./bin/abis.js\").parseAndCopyAbis()'",
+    "prepare:networks": "node ./bin/networks.js",
+    "prepare:test": "yarn copy:manifest && yarn copy:networks",
+    "prepare": "yarn prepare:networks && yarn prepare:abis",
+    "show-events": "node -e 'require(\"./bin/abis.js\").showAllEvents()'",
+    "test": "graph test -v 0.5.2"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "0.87.0",
+    "@graphprotocol/graph-ts": "0.35.1",
+    "@unlock-protocol/eslint-config": "workspace:./packages/eslint-config",
+    "@unlock-protocol/networks": "workspace:^",
+    "eslint": "9.13.0",
+    "fs-extra": "11.2.0",
+    "handlebars": "4.7.8",
+    "yargs": "17.7.2"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "devDependencies": {
+    "ethers": "6.13.4",
+    "graphql": "16.9.0",
+    "matchstick-as": "0.6.0",
+    "mustache": "4.2.0"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "@unlock-protocol/paywall",
+  "version": "0.8.0",
+  "main": "./dist/unlock.latest.umd.js",
+  "module": "./dist/unlock.latest.es.js",
+  "typings": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/unlock.latest.es.js",
+      "require": "./dist/unlock.latest.umd.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unlock-protocol/unlock.git",
+    "directory": "packages/paywall"
+  },
+  "scripts": {
+    "build:tsc": "tsc",
+    "build": "vite build && tsup ./src/index.ts --dts-only",
+    "lint": "eslint",
+    "test": "NODE_ENV=test vitest run --coverage",
+    "clean": "rm -rf build dist coverage",
+    "ci": "yarn test && yarn build"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/postmate": "1.5.4",
+    "@unlock-protocol/eslint-config": "workspace:./packages/eslint-config",
+    "@unlock-protocol/networks": "workspace:^",
+    "@unlock-protocol/tsconfig": "workspace:^",
+    "@unlock-protocol/types": "workspace:^",
+    "eslint": "9.17.0",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2",
+    "vite": "6.0.9",
+    "vite-plugin-css-injected-by-js": "3.5.2",
+    "vite-plugin-node-polyfills": "0.22.0",
+    "vitest": "2.1.8",
+    "vitest-fetch-mock": "0.4.3"
+  },
+  "dependencies": {
+    "postmate": "1.5.2"
+  }
+}

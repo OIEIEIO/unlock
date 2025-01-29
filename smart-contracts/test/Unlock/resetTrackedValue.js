@@ -1,99 +1,78 @@
-const Units = require('ethereumjs-units')
-const BigNumber = require('bignumber.js')
-const truffleAssert = require('truffle-assertions')
+const {
+  deployContracts,
+  deployLock,
+  reverts,
+  purchaseKey,
+  compareBigNumbers,
+} = require('../helpers')
+const { ethers } = require('hardhat')
 
-const deployLocks = require('../helpers/deployLocks')
+const keyPrice = ethers.parseUnits('0.01', 'ether')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../helpers/proxy')
+let unlock
+let lock
+let unlockOwner, keyOwner, anotherKeyOwner
 
-const keyPrice = Units.convert('0.01', 'eth', 'wei')
-
-let unlock, lock
-
-contract('Unlock / resetTrackedValue', accounts => {
+describe('Unlock / resetTrackedValue', () => {
   beforeEach(async () => {
-    unlock = await getProxy(unlockContract)
-    const locks = await deployLocks(unlock, accounts[0])
-    lock = locks['FIRST']
-    await lock.purchase(keyPrice, accounts[1], web3.utils.padLeft(0, 40), [], {
-      from: accounts[1],
-      value: keyPrice,
-    })
+    ;({ unlock } = await deployContracts())
+    lock = await deployLock({ unlock })
+    ;[unlockOwner, keyOwner, anotherKeyOwner] = await ethers.getSigners()
+    await purchaseKey(lock, await keyOwner.getAddress())
   })
 
   it('grossNetworkProduct has a non-zero value after a purchase', async () => {
     const grossNetworkProduct = await unlock.grossNetworkProduct()
-    assert.equal(grossNetworkProduct, keyPrice)
+    compareBigNumbers(grossNetworkProduct, keyPrice)
   })
 
   it('should fail to resetTrackedValue if called from a non-owner account', async () => {
-    await truffleAssert.fails(
-      unlock.resetTrackedValue(0, 0, { from: accounts[1] })
+    await reverts(
+      unlock.connect(keyOwner).resetTrackedValue(0, 0),
+      'ONLY_OWNER'
     )
   })
 
   describe('resetTrackedValue to 0', async () => {
     beforeEach(async () => {
-      await unlock.resetTrackedValue(0, 0, { from: accounts[0] })
+      await unlock.connect(unlockOwner).resetTrackedValue(0, 0)
     })
 
     it('grossNetworkProduct is now 0', async () => {
       const grossNetworkProduct = await unlock.grossNetworkProduct()
-      assert.equal(grossNetworkProduct, 0)
+      compareBigNumbers(grossNetworkProduct, 0)
     })
 
     describe('After purchase', () => {
       beforeEach(async () => {
-        await lock.purchase(
-          keyPrice,
-          accounts[2],
-          web3.utils.padLeft(0, 40),
-          [],
-          {
-            from: accounts[2],
-            value: keyPrice,
-          }
-        )
+        await purchaseKey(lock, await anotherKeyOwner.getAddress())
       })
 
       it('grossNetworkProduct has a non-zero value after a purchase', async () => {
         const grossNetworkProduct = await unlock.grossNetworkProduct()
-        assert.equal(grossNetworkProduct, keyPrice)
+        compareBigNumbers(grossNetworkProduct, keyPrice)
       })
     })
   })
 
   describe('resetTrackedValue to 42', async () => {
     beforeEach(async () => {
-      await unlock.resetTrackedValue(42, 0, { from: accounts[0] })
+      await unlock.connect(unlockOwner).resetTrackedValue(42, 0)
     })
 
     it('grossNetworkProduct is now 42', async () => {
       const grossNetworkProduct = await unlock.grossNetworkProduct()
-      assert.equal(grossNetworkProduct, 42)
+      compareBigNumbers(grossNetworkProduct, 42)
     })
 
     describe('After purchase', () => {
       beforeEach(async () => {
-        await lock.purchase(
-          keyPrice,
-          accounts[2],
-          web3.utils.padLeft(0, 40),
-          [],
-          {
-            from: accounts[2],
-            value: keyPrice,
-          }
-        )
+        await purchaseKey(lock, await anotherKeyOwner.getAddress())
       })
 
       it('grossNetworkProduct has a non-zero value after a purchase', async () => {
         const grossNetworkProduct = await unlock.grossNetworkProduct()
-        assert.equal(
-          grossNetworkProduct,
-          new BigNumber(keyPrice).plus(42).toFixed()
-        )
+        compareBigNumbers(grossNetworkProduct, keyPrice + 42n)
       })
     })
   })

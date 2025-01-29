@@ -1,9 +1,9 @@
 import express from 'express'
 
-let router = express.Router()
+const router: express.Router = express.Router({ mergeParams: true })
 
 router.get('/', (_, res) => {
-  res.sendStatus(200)
+  res.status(200).send('OK')
 })
 
-module.exports = router
+export default router

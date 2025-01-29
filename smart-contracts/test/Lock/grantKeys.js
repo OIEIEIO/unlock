@@ -1,145 +1,111 @@
-const Web3Utils = require('web3-utils')
+const assert = require('assert')
+const { ethers } = require('hardhat')
+const { reverts, deployLock, ADDRESS_ZERO } = require('../helpers')
+const { getEvent } = require('@unlock-protocol/hardhat-helpers')
 
-const truffleAssert = require('truffle-assertions')
-const deployLocks = require('../helpers/deployLocks')
-const shouldFail = require('../helpers/shouldFail')
+let lock
+let tx
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../helpers/proxy')
-
-let unlock, lock, locks, tx
-
-contract('Lock / grantKeys', accounts => {
-  const lockOwner = accounts[1]
-  const keyOwner = accounts[2]
-  const validExpirationTimestamp = Math.round(Date.now() / 1000 + 600)
+describe('Lock / grantKeys', () => {
+  let keyOwner, attacker, signers
+  let validExpirationTimestamp
+  let keyOwnerList
 
   before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, lockOwner)
-    lock = locks['FIRST']
+    ;[, keyOwner, attacker, ...signers] = await ethers.getSigners()
+    const blockNumber = await ethers.provider.getBlockNumber()
+    const latestBlock = await ethers.provider.getBlock(blockNumber)
+    validExpirationTimestamp = Math.round(latestBlock.timestamp + 600)
+    lock = await deployLock()
+    keyOwnerList = signers.map(({ address }) => address).splice(4, 6)
   })
 
   describe('can grant key(s)', () => {
     describe('can grant a key for a new user', () => {
+      let args
       before(async () => {
-        tx = await lock.grantKeys([keyOwner], [validExpirationTimestamp], {
-          from: lockOwner,
-        })
+        // the lock creator is assigned the KeyGranter role by default
+        tx = await lock.grantKeys(
+          [await keyOwner.getAddress()],
+          [validExpirationTimestamp],
+          [ADDRESS_ZERO]
+        )
+        const receipt = await tx.wait()
+        ;({ args } = await getEvent(receipt, 'Transfer'))
       })
 
       it('should log Transfer event', async () => {
-        assert.equal(tx.logs[0].event, 'Transfer')
-        assert.equal(tx.logs[0].args.from, 0)
-        assert.equal(tx.logs[0].args.to, accounts[2])
+        assert.equal(args.from, 0)
+        assert.equal(args.to, await keyOwner.getAddress())
       })
 
       it('should acknowledge that user owns key', async () => {
-        assert.notEqual(await lock.getTokenIdFor.call(keyOwner), 0)
+        assert.equal(
+          await lock.ownerOf(args.tokenId),
+          await keyOwner.getAddress()
+        )
       })
 
       it('getHasValidKey is true', async () => {
-        assert.equal(await lock.getHasValidKey.call(keyOwner), true)
-      })
-    })
-
-    describe('can grant a key extension for an existing user', () => {
-      const extendedExpiration = validExpirationTimestamp + 100
-
-      before(async () => {
-        tx = await lock.grantKeys([keyOwner], [extendedExpiration], {
-          from: lockOwner,
-        })
-      })
-
-      it('should log Transfer event', async () => {
-        assert.equal(tx.logs[0].event, 'Transfer')
-        assert.equal(tx.logs[0].args.from, 0)
-        assert.equal(tx.logs[0].args.to, accounts[2])
-      })
-
-      it('should acknowledge that user owns key', async () => {
-        assert.notEqual(await lock.getTokenIdFor.call(keyOwner), 0)
-      })
-
-      it('getHasValidKey is true', async () => {
-        assert.equal(await lock.getHasValidKey.call(keyOwner), true)
+        assert.equal(
+          await lock.getHasValidKey(await keyOwner.getAddress()),
+          true
+        )
       })
     })
 
     describe('bulk grant keys', () => {
-      const keyOwnerList = [accounts[3], accounts[4], accounts[5]]
-
       it('should fail to grant keys when expiration dates are missing', async () => {
-        await truffleAssert.fails(
-          lock.grantKeys(keyOwnerList, [validExpirationTimestamp], {
-            from: lockOwner,
-          }),
-          'revert'
+        await reverts(
+          lock.grantKeys(
+            keyOwnerList,
+            [validExpirationTimestamp],
+            [ADDRESS_ZERO]
+          ),
+          `panic code 0x32`
         )
       })
-    })
 
-    it('can bulk grant keys using unique expiration dates', async () => {
-      const keyOwnerList = [accounts[6], accounts[7]]
-      const expirationDates = [
-        validExpirationTimestamp,
-        validExpirationTimestamp + 42,
-      ]
-
-      before(async () => {
-        tx = await lock.methods['grantKeys(uint256[],uint256[])'](
+      it('can bulk grant keys using unique expiration dates', async () => {
+        const expirationDates = keyOwnerList.map(
+          (k, i) => validExpirationTimestamp + i * 3
+        )
+        tx = await lock.grantKeys(
           keyOwnerList,
           expirationDates,
-          { from: lockOwner }
+          keyOwnerList.map(() => ADDRESS_ZERO)
         )
-      })
-
-      it('should acknowledge that user owns key', async () => {
-        for (var i = 0; i < keyOwnerList.length; i++) {
-          assert.notEqual(await lock.getTokenIdFor.call(keyOwnerList[i]), 0)
-        }
-      })
-
-      it('getHasValidKey is true', async () => {
-        for (var i = 0; i < keyOwnerList.length; i++) {
-          assert.equal(await lock.getHasValidKey.call(keyOwnerList[i]), true)
+        for (let i = 0; i < keyOwnerList.length; i++) {
+          assert.equal(await lock.balanceOf(keyOwnerList[i]), 1)
+          assert.equal(await lock.getHasValidKey(keyOwnerList[i]), true)
         }
       })
     })
   })
 
   describe('should fail', () => {
-    it('should fail to revoke a key', async () => {
-      await shouldFail(
-        lock.grantKeys([keyOwner], [42], { from: lockOwner }),
-        'ALREADY_OWNS_KEY'
-      )
-    })
-
     it('should fail to grant key to the 0 address', async () => {
-      await shouldFail(
-        lock.grantKeys([Web3Utils.padLeft(0, 40)], [validExpirationTimestamp], {
-          from: lockOwner,
-        }),
+      await reverts(
+        lock.grantKeys(
+          [ADDRESS_ZERO],
+          [validExpirationTimestamp],
+          [ADDRESS_ZERO]
+        ),
         'INVALID_ADDRESS'
       )
     })
 
-    it('should fail to reduce the time remaining on a key', async () => {
-      await shouldFail(
-        lock.grantKeys([keyOwner], [validExpirationTimestamp - 1], {
-          from: lockOwner,
-        }),
-        'ALREADY_OWNS_KEY'
-      )
-    })
-
-    it('should fail if called by someone other than the owner', async () => {
-      await shouldFail(
-        lock.grantKeys([keyOwner], [validExpirationTimestamp], {
-          from: accounts[0],
-        })
+    // By default, the lockCreator has both the LockManager & KeyGranter roles
+    it('should fail if called by anyone but LockManager or KeyGranter', async () => {
+      await reverts(
+        lock
+          .connect(attacker)
+          .grantKeys(
+            [await keyOwner.getAddress()],
+            [validExpirationTimestamp],
+            [ADDRESS_ZERO]
+          ),
+        'ONLY_LOCK_MANAGER_OR_KEY_GRANTER'
       )
     })
   })

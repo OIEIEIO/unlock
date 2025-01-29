@@ -1,0 +1,14 @@
+.env
+*.tmp
+cache
+contracts
+artifacts
+
+# zksync
+zk-artifacts
+zk-cache
+artifacts-zk
+cache-zk
+
+.openzeppelin
+xcalled.tmp.json

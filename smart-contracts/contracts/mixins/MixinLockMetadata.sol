@@ -1,28 +1,26 @@
-pragma solidity 0.5.14;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/introspection/ERC165.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC721/IERC721Enumerable.sol';
-import '../UnlockUtils.sol';
-import './MixinKeys.sol';
-import './MixinLockCore.sol';
+import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165StorageUpgradeable.sol";
+// import '@openzeppelin/contracts-upgradeable/token/ERC721/extensions/IERC721EnumerableUpgradeable.sol';
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import "./MixinKeys.sol";
+import "./MixinLockCore.sol";
+import "./MixinRoles.sol";
 
 /**
  * @title Mixin for metadata about the Lock.
- * @author HardlyDifficult
  * @dev `Mixins` are a design pattern seen in the 0x contracts.  It simply
  * separates logically groupings of code to ease readability.
  */
 contract MixinLockMetadata is
-  IERC721Enumerable,
-  ERC165,
-  Ownable,
+  ERC165StorageUpgradeable,
+  MixinRoles,
   MixinLockCore,
   MixinKeys
 {
-  using UnlockUtils for uint;
-  using UnlockUtils for address;
-  using UnlockUtils for string;
+  using Strings for uint;
+  using Strings for address;
 
   /// A descriptive name for a collection of NFTs in this contract.Defaults to "Unlock-Protocol" but is settable by lock owner
   string public name;
@@ -33,15 +31,10 @@ contract MixinLockMetadata is
   // the base Token URI for this Lock. If not set by lock owner, the global URI stored in Unlock is used.
   string private baseTokenURI;
 
-  event NewLockSymbol(
-    string symbol
-  );
+  event LockMetadata(string name, string symbol, string baseTokenURI);
 
-  function _initializeMixinLockMetadata(
-    string memory _lockName
-  ) internal
-  {
-    ERC165.initialize();
+  function _initializeMixinLockMetadata(string calldata _lockName) internal {
+    ERC165StorageUpgradeable.__ERC165Storage_init();
     name = _lockName;
     // registering the optional erc721 metadata interface with ERC165.sol using
     // the ID specified in the standard: https://eips.ethereum.org/EIPS/eip-721
@@ -49,78 +42,93 @@ contract MixinLockMetadata is
   }
 
   /**
-   * Allows the Lock owner to assign a descriptive name for this Lock.
+   * Allows the Lock owner to assign
+   * @param _lockName a descriptive name for this Lock.
+   * @param _lockSymbol a Symbol for this Lock (default to KEY).
+   * @param _baseTokenURI the baseTokenURI for this Lock
    */
-  function updateLockName(
-    string calldata _lockName
-  ) external
-    onlyOwner
-  {
+  function setLockMetadata(
+    string calldata _lockName,
+    string calldata _lockSymbol,
+    string calldata _baseTokenURI
+  ) public {
+    _onlyLockManager();
+
     name = _lockName;
-  }
-
-  /**
-   * Allows the Lock owner to assign a Symbol for this Lock.
-   */
-  function updateLockSymbol(
-    string calldata _lockSymbol
-  ) external
-    onlyOwner
-  {
     lockSymbol = _lockSymbol;
-    emit NewLockSymbol(_lockSymbol);
+    baseTokenURI = _baseTokenURI;
+
+    emit LockMetadata(name, lockSymbol, baseTokenURI);
   }
 
   /**
-    * @dev Gets the token symbol
-    * @return string representing the token name
-    */
-  function symbol()
-    external view
-    returns(string memory)
-  {
-    if(bytes(lockSymbol).length == 0) {
+   * @dev Gets the token symbol
+   * @return string representing the token name
+   */
+  function symbol() external view returns (string memory) {
+    if (bytes(lockSymbol).length == 0) {
       return unlockProtocol.globalTokenSymbol();
     } else {
       return lockSymbol;
     }
   }
 
-  /**
-   * Allows the Lock owner to update the baseTokenURI for this Lock.
-   */
-  function setBaseTokenURI(
-    string calldata _baseTokenURI
-  ) external
-    onlyOwner
-  {
-    baseTokenURI = _baseTokenURI;
-  }
-
   /**  @notice A distinct Uniform Resource Identifier (URI) for a given asset.
-   * @dev Throws if `_tokenId` is not a valid NFT. URIs are defined in RFC
-   *  3986. The URI may point to a JSON file that conforms to the "ERC721
-   *  Metadata JSON Schema".
+   * @param _tokenId The iD of the token  for which we want to retrieve the URI.
+   * If 0 is passed here, we just return the appropriate baseTokenURI.
+   * If a custom URI has been set we don't return the lock address.
+   * It may be included in the custom baseTokenURI if needed.
+   * @dev  URIs are defined in RFC 3986. The URI may point to a JSON file
+   * that conforms to the "ERC721 Metadata JSON Schema".
    * https://github.com/ethereum/EIPs/blob/master/EIPS/eip-721.md
    */
-  function tokenURI(
-    uint256 _tokenId
-  ) external
-    view
-    isKey(_tokenId)
-    returns(string memory)
-  {
+  function tokenURI(uint256 _tokenId) external view returns (string memory) {
     string memory URI;
-    if(bytes(baseTokenURI).length == 0) {
-      URI = unlockProtocol.globalBaseTokenURI();
+    string memory tokenId;
+    string memory lockAddress = address(this).toHexString();
+    string memory seperator;
+
+    if (_tokenId != 0) {
+      tokenId = _tokenId.toString();
     } else {
-      URI = baseTokenURI;
+      tokenId = "";
     }
 
-    return URI.strConcat(
-      address(this).address2Str(),
-      '/',
-      _tokenId.uint2Str()
-    );
+    if (address(onTokenURIHook) != address(0)) {
+      uint expirationTimestamp = keyExpirationTimestampFor(_tokenId);
+      return
+        onTokenURIHook.tokenURI(
+          address(this),
+          msg.sender,
+          ownerOf(_tokenId),
+          _tokenId,
+          expirationTimestamp
+        );
+    }
+
+    if (bytes(baseTokenURI).length == 0) {
+      URI = unlockProtocol.globalBaseTokenURI();
+      seperator = "/";
+    } else {
+      URI = baseTokenURI;
+      seperator = "";
+      lockAddress = "";
+    }
+
+    return string(abi.encodePacked(URI, lockAddress, seperator, tokenId));
   }
+
+  function supportsInterface(
+    bytes4 interfaceId
+  )
+    public
+    view
+    virtual
+    override(AccessControlUpgradeable, ERC165StorageUpgradeable)
+    returns (bool)
+  {
+    return super.supportsInterface(interfaceId);
+  }
+
+  uint256[1000] private __safe_upgrade_gap;
 }

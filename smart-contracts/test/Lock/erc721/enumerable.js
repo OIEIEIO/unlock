@@ -1,47 +1,39 @@
-const deployLocks = require('../../helpers/deployLocks')
-const shouldFail = require('../../helpers/shouldFail')
+const assert = require('assert')
+const { reverts } = require('../../helpers/errors')
+const { deployLock, purchaseKeys, compareBigNumbers } = require('../../helpers')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../../helpers/proxy')
+let lock
+let tokenIds
+let keyOwners
 
-let unlock, locks, lock
-
-contract('Lock / erc721 / approve', accounts => {
+describe('Lock / erc721 / enumerable', () => {
   before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, accounts[0])
-    lock = locks['FIRST']
+    lock = await deployLock()
 
     // Buy test keys for each account
-    const keyPrice = await lock.keyPrice()
-    for (let i = 0; i < 5; i++) {
-      await lock.purchase(0, accounts[i], web3.utils.padLeft(0, 40), [], {
-        value: keyPrice.toString(),
-        from: accounts[i],
-      })
-    }
+    ;({ tokenIds, keyOwners } = await purchaseKeys(lock, 5))
   })
 
   it('tokenByIndex is a no-op', async () => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < keyOwners.length; i++) {
       const id = await lock.tokenByIndex(i)
-      assert.equal(id.toString(), i)
+      assert.equal(id, i)
     }
   })
 
   it('tokenByIndex greater than totalSupply shouldFail', async () => {
-    await shouldFail(lock.tokenByIndex(5))
+    await reverts(lock.tokenByIndex(5))
   })
 
-  it('tokenOfOwnerByIndex forwards to getTokenIdFor when index == 0', async () => {
-    for (let i = 0; i < 5; i++) {
-      const id = await lock.tokenOfOwnerByIndex(accounts[i], 0)
-      const expected = await lock.getTokenIdFor(accounts[i])
-      assert.equal(id.toString(), expected.toString())
+  it('tokenOfOwnerByIndex forwards to when index == 0', async () => {
+    for (let i = 0; i < keyOwners.length; i++) {
+      const id = await lock.tokenOfOwnerByIndex(keyOwners[i], 0)
+      const expected = tokenIds[i]
+      compareBigNumbers(id, expected)
     }
   })
 
   it('tokenOfOwnerByIndex fails when index > 0', async () => {
-    await shouldFail(lock.tokenOfOwnerByIndex(accounts[0], 1))
+    await reverts(lock.tokenOfOwnerByIndex(keyOwners[0], 1))
   })
 })

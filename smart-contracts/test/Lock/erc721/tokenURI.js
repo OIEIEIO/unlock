@@ -1,17 +1,27 @@
-const Units = require('ethereumjs-units')
-const deployLocks = require('../../helpers/deployLocks')
-const shouldFail = require('../../helpers/shouldFail')
+const assert = require('assert')
+const { ethers } = require('hardhat')
+const { getEvent } = require('@unlock-protocol/hardhat-helpers')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../../helpers/proxy')
+const {
+  deployLock,
+  deployContracts,
+  purchaseKey,
+  reverts,
+} = require('../../helpers')
 
-let unlock, lock, txObj, event
+const metadata = require('../../fixtures/metadata')
+const defaultTokenURI = 'https://globalBaseTokenURI.com/api/key/'
+
+let lock
+let unlock
+let baseTokenURI
+let lockManager, someAccount
 
 // Helper function to deal with the lock returning the address part of the URI in lowercase.
 function stringShifter(str) {
   let lowercaseAddress = ''
   let c
-  for (var i = 0; i < str.length; i++) {
+  for (let i = 0; i < str.length; i++) {
     c = str.charAt(i)
     if (c.toLowerCase() != c.toUpperCase()) {
       lowercaseAddress += c.toLowerCase()
@@ -22,77 +32,112 @@ function stringShifter(str) {
   return lowercaseAddress
 }
 
-contract('Lock / erc721 / tokenURI', accounts => {
+describe('Lock / erc721 / tokenURI', () => {
   before(async () => {
-    unlock = await getProxy(unlockContract)
-
-    const locks = await deployLocks(unlock, accounts[0])
-    lock = locks['FIRST']
+    ;[lockManager, someAccount] = await ethers.getSigners()
+    ;({ unlock } = await deployContracts())
+    lock = await deployLock({ unlock })
   })
 
   describe('the global tokenURI stored in Unlock', () => {
     it('should return the global base token URI', async () => {
-      assert.equal(await unlock.globalBaseTokenURI.call(), '')
+      assert.equal(await unlock.globalBaseTokenURI(), '')
     })
 
-    it('should allow the owner to set the global base token URI', async () => {
-      txObj = await unlock.configUnlock(
-        await unlock.publicLockAddress(),
-        await unlock.globalTokenSymbol(),
-        'https://newTokenURI.com/api/key',
-        {
-          from: accounts[0],
-        }
-      )
-      event = txObj.logs[0]
-      assert.equal(
-        await unlock.globalBaseTokenURI.call(),
-        'https://newTokenURI.com/api/key'
-      )
+    describe('set global base URI', () => {
+      let configUnlockEvent
+      beforeEach(async () => {
+        const tx = await unlock.connect(lockManager).configUnlock(
+          await unlock.governanceToken(),
+          await unlock.weth(),
+          0,
+          await unlock.globalTokenSymbol(),
+          defaultTokenURI,
+          1 // mainnet
+        )
+        const receipt = await tx.wait()
+        configUnlockEvent = await getEvent(receipt, 'ConfigUnlock')
+      })
+
+      it('should allow the owner to set the global base token URI', async () => {
+        assert.equal(await unlock.globalBaseTokenURI(), defaultTokenURI)
+      })
+
+      it('getGlobalBaseTokenURI is the same', async () => {
+        assert.equal(
+          await unlock.globalBaseTokenURI(),
+          await unlock.getGlobalBaseTokenURI()
+        )
+      })
+
+      it('should emit the ConfigUnlock event', async () => {
+        assert.equal(configUnlockEvent.args.globalTokenURI, defaultTokenURI)
+      })
     })
 
     it('should fail if someone other than the owner tries to set the URI', async () => {
-      await shouldFail(
-        unlock.configUnlock(
-          await unlock.publicLockAddress(),
+      await reverts(
+        unlock.connect(someAccount).configUnlock(
+          await unlock.governanceToken(),
+          await unlock.weth(),
+          0,
           await unlock.globalTokenSymbol(),
-          'https://fakeURI.com',
-          {
-            from: accounts[1],
-          }
+          'https://fakeGlobalURI.com',
+          1 // mainnet
         )
       )
-    })
-
-    it('should emit the ConfigUnlock event', async () => {
-      assert.equal(event.event, 'ConfigUnlock')
     })
   })
 
   describe(' The custom tokenURI stored in the Lock', () => {
-    it('should allow the lock owner to set a custom base tokenURI', async () => {
-      txObj = await lock.setBaseTokenURI('https:/newURI.com/api/key/', {
-        from: accounts[0],
-      })
-      event = txObj.logs[0]
-
-      await lock.purchase(0, accounts[0], web3.utils.padLeft(0, 40), [], {
-        value: Units.convert('0.01', 'eth', 'wei'),
-      })
-      const uri = await lock.tokenURI.call(1)
-      const lockAddressStr = lock.address.toString()
-      const lowerCaseAddress = stringShifter(lockAddressStr)
-      assert.equal(uri, `https:/newURI.com/api/key/${lowerCaseAddress}` + '/1')
+    let lockMetadataEvent
+    before(async () => {
+      const tx = await lock
+        .connect(lockManager)
+        .setLockMetadata(...Object.values(metadata))
+      const receipt = await tx.wait()
+      lockMetadataEvent = await getEvent(receipt, 'LockMetadata')
     })
 
-    it('should allow the owner to to unset the custom URI and default to the global one', async () => {})
+    it('should allow the lock creator to set a custom base tokenURI', async () => {
+      await purchaseKey(lock, await lockManager.getAddress())
+      const uri = await lock.tokenURI(1)
+      assert.equal(uri, `${metadata.baseTokenURI}1`)
+    })
 
-    it('should fail if someone other than the owner tries to set the URI', async () => {
-      await shouldFail(
-        lock.setBaseTokenURI('https://fakeURI.com', {
-          from: accounts[1],
-        })
+    it('should emit the LockMetadata event', async () => {
+      assert.equal(lockMetadataEvent.args.baseTokenURI, metadata.baseTokenURI)
+    })
+
+    it('should let anyone get the baseTokenURI for a lock by passing tokenId 0', async () => {
+      // here we pass 0 as the tokenId to get the baseTokenURI
+      baseTokenURI = await lock.tokenURI(0)
+      assert.equal(baseTokenURI, metadata.baseTokenURI)
+    })
+
+    it('should allow the lock creator to unset the custom URI and default to the global one', async () => {
+      await lock.connect(lockManager).setLockMetadata(
+        metadata.name,
+        metadata.symbol,
+        '' //baseTokenURI
       )
+
+      const baseTokenURI = await lock.tokenURI(0)
+      const lockAddressStr = await lock.getAddress()
+      const lowerCaseAddress = stringShifter(lockAddressStr)
+
+      // should now return the globalBaseTokenURI + the lock address
+      assert.equal(baseTokenURI, `${defaultTokenURI}${lowerCaseAddress}/`)
+
+      const uri = await lock.tokenURI(1)
+      assert.equal(uri, `${defaultTokenURI}${lowerCaseAddress}` + '/1')
     })
+  })
+
+  it('should fail if someone other than the owner tries to set the URI', async () => {
+    await reverts(
+      lock.connect(someAccount).setLockMetadata(...Object.values(metadata)),
+      'ONLY_LOCK_MANAGER'
+    )
   })
 })

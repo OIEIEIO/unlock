@@ -1,9 +1,9 @@
-import { Request } from 'express-serve-static-core' // eslint-disable-line no-unused-vars, import/no-unresolved
+import { Request } from 'express'
 
 export interface UserCreationInput {
   emailAddress: string
   publicKey: string
-  passwordEncryptedPrivateKey: string
+  passwordEncryptedPrivateKey: any
 }
 
 export interface Lock {
@@ -31,21 +31,30 @@ export interface EventCreation {
 }
 
 export interface ItemizedKeyPrice {
-  keyPrice: number
-  gasFee: number
-  creditCardProcessing: number
-  unlockServiceFee: number
+  gasFee?: number
+  keyPrice?: number
+  creditCardProcessing?: number
+  unlockServiceFee?: number
 }
 
 export interface SignedRequest extends Request {
   owner: string
   signee: string
+  chain: number
 }
 
 export interface UserTokenMetadataInput {
+  chain: number
   tokenAddress: string
   userAddress: string
   data: any
 }
 
 export type ethereumAddress = string
+
+export interface Attribute {
+  display_type?: string
+  max_value?: number
+  trait_type: string
+  value: string | number
+}

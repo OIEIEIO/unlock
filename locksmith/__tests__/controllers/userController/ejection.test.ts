@@ -1,22 +1,12 @@
+import { ethers } from 'ethers'
 import request from 'supertest'
-
-import app = require('../../../src/app')
-import Base64 = require('../../../src/utils/base64')
-import ethJsUtil = require('ethereumjs-util')
-import models = require('../../../src/models')
-import sigUtil = require('eth-sig-util')
-import UserOperations = require('../../../src/operations/userOperations')
-
-function generateTypedData(message: any) {
+import app from '../../app'
+import * as Base64 from '../../../src/utils/base64'
+import { User, UserReference } from '../../../src/models'
+import UserOperations from '../../../src/operations/userOperations'
+function generateTypedData(message: any, messageKey: string) {
   return {
     types: {
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-        { name: 'salt', type: 'bytes32' },
-      ],
       User: [{ name: 'publicKey', type: 'address' }],
     },
     domain: {
@@ -24,14 +14,12 @@ function generateTypedData(message: any) {
       version: '1',
     },
     primaryType: 'User',
-    message: message,
+    message,
+    messageKey,
   }
 }
 
 beforeAll(() => {
-  let User = models.User
-  let UserReference = models.UserReference
-
   return Promise.all([
     User.truncate({ cascade: true }),
     UserReference.truncate({ cascade: true }),
@@ -43,7 +31,7 @@ describe('when ejecting an address', () => {
     it('returns a 401', async () => {
       expect.assertions(1)
 
-      let response = await request(app).post(
+      const response = await request(app).post(
         '/users/0xD8fDbF2302b13d4CF00BAC1a25EFb786759c7788/eject'
       )
 
@@ -54,33 +42,32 @@ describe('when ejecting an address', () => {
     it('returns 202', async () => {
       expect.assertions(1)
 
-      let privateKey = ethJsUtil.toBuffer(
+      const wallet = new ethers.Wallet(
         '0x00a7bd3ec661f15214f8a48dce017e27dd8e1b4b779aaf823d8eb74d8c960b95'
       )
 
-      let message = {
+      const message = {
         user: {
           publicKey: '0xD8fDbF2302b13d4CF00BAC1a25EFb786759c7788',
         },
       }
 
-      let typedData = generateTypedData(message)
+      const typedData = generateTypedData(message, 'user')
 
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
+      const { domain, types } = typedData
+      const sig = await wallet.signTypedData(domain, types, message['user'])
 
-      let emailAddress = 'existing@example.com'
-      let userCreationDetails = {
-        emailAddress: emailAddress,
-        publicKey: '0xd8fdbf2302b13d4cf00bac1a25efb786759c7788',
+      const emailAddress = 'existing@example.com'
+      const userCreationDetails = {
+        emailAddress,
+        publicKey: '0xD8fDbF2302b13d4CF00BAC1a25EFb786759c7788',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
         recoveryPhrase: 'a recovery phrase',
       }
 
       await UserOperations.createUser(userCreationDetails)
 
-      let response = await request(app)
+      const response = await request(app)
         .post('/users/0xD8fDbF2302b13d4CF00BAC1a25EFb786759c7788/eject')
         .set('Authorization', `Bearer ${Base64.encode(sig)}`)
         .send(typedData)
@@ -93,23 +80,22 @@ describe('when ejecting an address', () => {
     it('returns 400', async () => {
       expect.assertions(1)
 
-      let privateKey = ethJsUtil.toBuffer(
+      const wallet = new ethers.Wallet(
         '0xc7f80893d7a8eda620643280aedd684e87541555c9de450f70e11eb53c7cd02e'
       )
 
-      let message = {
+      const message = {
         user: {
-          publicKey: '0xef49773e0d59f607cea8c8be4ce87bd26fd8e208',
+          publicKey: '0xeF49773e0D59F607ceA8c8bE4Ce87bd26Fd8E208',
         },
       }
 
-      let typedData = generateTypedData(message)
+      const typedData = generateTypedData(message, 'user')
 
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
+      const { domain, types } = typedData
+      const sig = await wallet.signTypedData(domain, types, message['user'])
 
-      let response = await request(app)
+      const response = await request(app)
         .post('/users/0xef49773e0d59f607cea8c8be4ce87bd26fd8e208/eject')
         .set('Authorization', `Bearer ${Base64.encode(sig)}`)
         .send(typedData)
@@ -122,33 +108,32 @@ describe('when ejecting an address', () => {
     it('returns 400', async () => {
       expect.assertions(1)
 
-      let privateKey = ethJsUtil.toBuffer(
+      const wallet = new ethers.Wallet(
         '0xa272d59fbefc1eb1564b5a0f7c603f645965f02e3175f08d40e5486a5dcebd1c'
       )
 
-      let message = {
+      const message = {
         user: {
-          publicKey: '0x9409bd2f87f0698f89c04caee8ddb2fd9e44bcc3',
+          publicKey: '0x9409bD2F87F0698f89C04cAeE8DdB2fD9e44bCc3',
         },
       }
 
-      let typedData = generateTypedData(message)
+      const typedData = generateTypedData(message, 'user')
 
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
+      const { domain, types } = typedData
+      const sig = await wallet.signTypedData(domain, types, message['user'])
 
-      let emailAddress = 'ejected_user@example.com'
-      let userCreationDetails = {
-        emailAddress: emailAddress,
-        publicKey: '0x9409bd2f87f0698f89c04caee8ddb2fd9e44bcc3',
+      const emailAddress = 'ejected_user@example.com'
+      const userCreationDetails = {
+        emailAddress,
+        publicKey: '0x9409bD2F87F0698f89C04cAeE8DdB2fD9e44bCc3',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
       }
 
       await UserOperations.createUser(userCreationDetails)
       await UserOperations.eject(userCreationDetails.publicKey)
 
-      let response = await request(app)
+      const response = await request(app)
         .post('/users/0x9409bd2f87f0698f89c04caee8ddb2fd9e44bcc3/eject')
         .set('Authorization', `Bearer ${Base64.encode(sig)}`)
         .send(typedData)

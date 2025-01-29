@@ -1,62 +1,54 @@
-const Units = require('ethereumjs-units')
-const Web3Utils = require('web3-utils')
-const deployLocks = require('../../helpers/deployLocks')
-const shouldFail = require('../../helpers/shouldFail')
+const assert = require('assert')
+const { ethers } = require('hardhat')
+const { getEvent } = require('@unlock-protocol/hardhat-helpers')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../../helpers/proxy')
+const {
+  deployLock,
+  ADDRESS_ZERO,
+  purchaseKey,
+  reverts,
+  compareBigNumbers,
+} = require('../../helpers')
 
-let unlock, locks, ID
+let lock
+let tokenId
+let keyOwner, approvedAccount
 
-contract('Lock / erc721 / approve', accounts => {
+describe('Lock / erc721 / approve', () => {
   before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, accounts[0])
+    ;[, keyOwner, approvedAccount] = await ethers.getSigners()
+    lock = await deployLock()
   })
 
   describe('when the token does not exist', () => {
     it('should fail', async () => {
-      await shouldFail(
-        locks['FIRST'].approve(accounts[2], 42, {
-          from: accounts[1],
-        }),
-        'ONLY_KEY_OWNER_OR_APPROVED'
+      await reverts(
+        lock.connect(keyOwner).approve(await approvedAccount.getAddress(), 42),
+        'ONLY_KEY_MANAGER_OR_APPROVED'
       )
     })
   })
 
   describe('when the key exists', () => {
-    before(() => {
-      return locks['FIRST'].purchase(
-        0,
-        accounts[1],
-        web3.utils.padLeft(0, 40),
-        [],
-        {
-          value: Units.convert('0.01', 'eth', 'wei'),
-          from: accounts[1],
-        }
-      )
+    before(async () => {
+      ;({ tokenId } = await purchaseKey(lock, await keyOwner.getAddress()))
     })
 
     describe('when the sender is not the token owner', () => {
       it('should fail', async () => {
-        ID = await locks['FIRST'].getTokenIdFor.call(accounts[1])
-        await shouldFail(
-          locks['FIRST'].approve(accounts[2], ID, {
-            from: accounts[2],
-          }),
-          'ONLY_KEY_OWNER_OR_APPROVED'
+        await reverts(
+          lock
+            .connect(approvedAccount)
+            .approve(await approvedAccount.getAddress(), tokenId),
+          'ONLY_KEY_MANAGER_OR_APPROVED'
         )
       })
     })
 
     describe('when the sender is self approving', () => {
       it('should fail', async () => {
-        await shouldFail(
-          locks['FIRST'].approve(accounts[1], ID, {
-            from: accounts[1],
-          }),
+        await reverts(
+          lock.connect(keyOwner).approve(await keyOwner.getAddress(), tokenId),
           'APPROVE_SELF'
         )
       })
@@ -65,55 +57,51 @@ contract('Lock / erc721 / approve', accounts => {
     describe('when the approval succeeds', () => {
       let event
       before(async () => {
-        let result = await locks['FIRST'].approve(accounts[2], ID, {
-          from: accounts[1],
-        })
-        event = result.logs[0]
+        const tx = await lock
+          .connect(keyOwner)
+          .approve(await approvedAccount.getAddress(), tokenId)
+        const receipt = await tx.wait()
+        event = await getEvent(receipt, 'Approval')
       })
 
-      it('should assign the approvedForTransfer value', () => {
-        return locks['FIRST'].getApproved.call(ID).then(approved => {
-          assert.equal(approved, accounts[2])
-        })
+      it('should assign the approvedForTransfer value', async () => {
+        const approved = await lock.getApproved(tokenId)
+        assert.equal(approved, await approvedAccount.getAddress())
       })
 
-      it('should trigger the Approval event', () => {
-        assert.equal(event.event, 'Approval')
-        assert.equal(event.args.owner, accounts[1])
-        assert.equal(event.args.approved, accounts[2])
-        assert(event.args.tokenId.eq(ID))
+      it('should trigger the Approval event', async () => {
+        assert.equal(event.event.fragment.name, 'Approval')
+        assert.equal(event.args.owner, await keyOwner.getAddress())
+        assert.equal(event.args.approved, await approvedAccount.getAddress())
+        compareBigNumbers(event.args.tokenId, tokenId)
       })
 
       describe('when reaffirming the approved address', () => {
         before(async () => {
-          let result = await locks['FIRST'].approve(accounts[2], ID, {
-            from: accounts[1],
-          })
-          event = result.logs[0]
+          let tx = await lock
+            .connect(keyOwner)
+            .approve(await approvedAccount.getAddress(), tokenId)
+          const receipt = await tx.wait()
+          event = await getEvent(receipt, 'Approval')
         })
 
         it('Approval emits when the approved address is reaffirmed', async () => {
-          assert.equal(event.event, 'Approval')
-          assert.equal(event.args.owner, accounts[1])
-          assert.equal(event.args.approved, accounts[2])
-          assert(event.args.tokenId.eq(ID))
+          assert.equal(event.event.fragment.name, 'Approval')
+          assert.equal(event.args.owner, await keyOwner.getAddress())
+          assert.equal(event.args.approved, await approvedAccount.getAddress())
+          compareBigNumbers(event.args.tokenId, tokenId)
         })
       })
 
       describe('when clearing the approved address', () => {
         before(async () => {
-          let result = await locks['FIRST'].approve(
-            Web3Utils.padLeft(0, 40),
-            ID,
-            {
-              from: accounts[1],
-            }
-          )
-          event = result.logs[0]
+          let tx = await lock.connect(keyOwner).approve(ADDRESS_ZERO, tokenId)
+          const receipt = await tx.wait()
+          event = await getEvent(receipt, 'Approval')
         })
 
         it('The zero address indicates there is no approved address', async () => {
-          await shouldFail(locks['FIRST'].getApproved.call(ID), 'NONE_APPROVED')
+          assert.equal(await lock.getApproved(tokenId), ADDRESS_ZERO)
         })
       })
     })

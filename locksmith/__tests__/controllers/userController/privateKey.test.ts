@@ -1,11 +1,11 @@
-import models = require('../../../src/models')
-import app = require('../../../src/app')
-import UserOperations = require('../../../src/operations/userOperations')
+import request from 'supertest'
+import app from '../../app'
+import { User, UserReference } from '../../../src/models'
+
+import UserOperations from '../../../src/operations/userOperations'
+// These tests are slow because we generate private keys
 
 beforeAll(() => {
-  let UserReference = models.UserReference
-  let User = models.User
-
   return Promise.all([
     UserReference.truncate({ cascade: true }),
     User.truncate({ cascade: true }),
@@ -13,23 +13,23 @@ beforeAll(() => {
 })
 
 describe('encrypted private key retrevial', () => {
-  const request = require('supertest')
-
   describe('when the provided email exists in the persistence layer', () => {
     it('returns the relevant encrypted private key', async () => {
       expect.assertions(1)
-      let emailAddress = 'existing@example.com'
+      const emailAddress = 'existing@example.com'
 
-      let userCreationDetails = {
-        emailAddress: emailAddress,
-        publicKey: '0x6635f83421bf059cd8111f180f0727128685bae4',
+      const userCreationDetails = {
+        emailAddress,
+        publicKey: '0x6635F83421Bf059cd8111f180f0727128685BaE4',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
         recoveryPhrase: 'a recovery phrase',
       }
 
       await UserOperations.createUser(userCreationDetails)
 
-      let response = await request(app).get(`/users/${emailAddress}/privatekey`)
+      const response = await request(app).get(
+        `/users/${emailAddress}/privatekey`
+      )
 
       expect(response.body).toEqual({
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
@@ -37,13 +37,15 @@ describe('encrypted private key retrevial', () => {
     })
   })
 
-  describe('when the provided email does not exist within the existing persistence layer', () => {
+  describe.skip('when the provided email does not exist within the existing persistence layer', () => {
     it('returns details from the decoy user', async () => {
       expect.assertions(3)
-      let emailAddress = 'non-existing@example.com'
-      let response = await request(app).get(`/users/${emailAddress}/privatekey`)
+      const emailAddress = 'non-existing@example.com'
+      const response = await request(app).get(
+        `/users/${emailAddress}/privatekey`
+      )
 
-      let passwordEncryptedPrivateKey = JSON.parse(
+      const passwordEncryptedPrivateKey = JSON.parse(
         response.body.passwordEncryptedPrivateKey
       )
 
@@ -56,17 +58,19 @@ describe('encrypted private key retrevial', () => {
   describe('when the account has been ejected', () => {
     it('returns a 404', async () => {
       expect.assertions(1)
-      let emailAddress = 'ejected_user@example.com'
-      let userCreationDetails = {
-        emailAddress: emailAddress,
-        publicKey: 'ejected_user_phrase_public_key',
+      const emailAddress = 'ejected_user@example.com'
+      const userCreationDetails = {
+        emailAddress,
+        publicKey: '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
       }
 
       await UserOperations.createUser(userCreationDetails)
       await UserOperations.eject(userCreationDetails.publicKey)
 
-      let response = await request(app).get(`/users/${emailAddress}/privatekey`)
+      const response = await request(app).get(
+        `/users/${emailAddress}/privatekey`
+      )
       expect(response.statusCode).toEqual(404)
     })
   })

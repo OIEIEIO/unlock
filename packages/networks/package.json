@@ -1,0 +1,52 @@
+{
+  "name": "@unlock-protocol/networks",
+  "version": "0.0.24",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "description": "Unlock Protocol's contract addressess for various networks",
+  "scripts": {
+    "start": "tsc --watch",
+    "lint:fix": "yarn lint --fix",
+    "lint": "eslint",
+    "build": "tsup src/index.ts --dts --format esm,cjs",
+    "check:keys": "tsx ./bin/check-keys",
+    "check:tokens": "tsx ./bin/check-tokens",
+    "check:hooks": "tsx ./bin/check-hooks",
+    "check:verify": "tsx ./bin/check-verify",
+    "validate": "tsx ./bin/validate.ts",
+    "create-localhost": "tsx ./bin/localhost",
+    "clean": "rm -rf ./dist",
+    "unlock-address": "tsx ./bin/readSubgraphInfo",
+    "prepublish": "yarn build",
+    "doc": "node ./bin/doc.js",
+    "version:show": "echo $npm_package_version"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unlock-protocol/unlock.git",
+    "directory": "packages/networks"
+  },
+  "devDependencies": {
+    "@unlock-protocol/tsconfig": "workspace:^",
+    "@unlock-protocol/types": "workspace:^",
+    "eslint": "9.17.0",
+    "fs-extra": "11.2.0",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "eslint-plugin-sort-keys-fix": "1.1.2",
+    "ethers": "6.13.4",
+    "tsx": "4.19.2"
+  }
+}

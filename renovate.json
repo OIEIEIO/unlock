@@ -1,87 +1,131 @@
 {
   "extends": [
-    "config:base",
+    "config:recommended",
     ":prHourlyLimitNone",
     ":prConcurrentLimitNone",
-    ":pinVersions",
+    ":pinAllExceptPeerDependencies",
     ":doNotPinPackage(node)"
   ],
   "timezone": "America/Los_Angeles",
-  "schedule": ["before 3am on monday"],
-  "rebaseStalePrs": false,
-  "minor": {
-    "groupName": "minor and patch updates"
-  },
+  "schedule": ["on the first day of the month"],
   "packageRules": [
     {
-      "paths": ["locksmith/**"],
+      "minor": {
+        "groupName": "packages/contracts"
+      },
+      "matchFileNames": ["packages/contracts/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/eslint-config"
+      },
+      "matchFileNames": ["packages/eslint-config/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/hardhat-plugin"
+      },
+      "matchFileNames": ["packages/hardhat-plugin/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/networks"
+      },
+      "matchFileNames": ["packages/networks/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/paywall"
+      },
+      "matchFileNames": ["packages/paywall/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/tsconfig"
+      },
+      "matchFileNames": ["packages/tsconfig/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/types"
+      },
+      "matchFileNames": ["packages/types/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/ui"
+      },
+      "matchFileNames": ["packages/ui/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/unlock-express"
+      },
+      "matchFileNames": ["packages/unlock-express/**"]
+    },
+    {
+      "minor": {
+        "groupName": "packages/unlock-js"
+      },
+      "matchFileNames": ["packages/unlock-js/**"]
+    },
+    {
+      "minor": {
+        "groupName": "tests"
+      },
+      "matchFileNames": ["tests/**"]
+    },
+    {
       "minor": {
         "groupName": "locksmith"
-      }
+      },
+      "matchFileNames": ["locksmith/**"]
     },
     {
-      "paths": ["paywall/**"],
       "minor": {
-        "groupName": "paywall"
-      }
+        "groupName": "paywall-app"
+      },
+      "matchFileNames": ["paywall-app/**"]
     },
     {
-      "paths": ["rover/**"],
-      "minor": {
-        "groupName": "rover"
-      }
-    },
-    {
-      "paths": ["smart-contracts/**"],
       "minor": {
         "groupName": "smart-contracts"
       },
-      "reviewers": ["NickCuso"]
+      "matchFileNames": ["smart-contracts/**"]
     },
     {
-      "paths": ["tickets/**"],
-      "minor": {
-        "groupName": "tickets"
-      }
-    },
-    {
-      "paths": ["unlock-app/**"],
       "minor": {
         "groupName": "unlock-app"
-      }
+      },
+      "matchFileNames": ["unlock-app/**"]
     },
     {
-      "paths": ["unlock-js/**"],
-      "minor": {
-        "groupName": "unlock-js"
-      }
-    },
-    {
-      "paths": ["unlock-protocol.com/**"],
       "minor": {
         "groupName": "unlock-protocol.com"
-      }
+      },
+      "matchFileNames": ["unlock-protocol.com/**"]
     },
     {
-      "paths": ["wedlocks/**"],
       "minor": {
         "groupName": "wedlocks"
-      }
+      },
+      "matchFileNames": ["wedlocks/**"]
     },
     {
-      "packagePatterns": [
-        "*"
-      ],
-      "major": {
-        "groupName": null
-      }
-    },
-    {
-      "packageNames": ["@unlock-protocol/unlock-js"],
-      "schedule": ["at any time"],
       "minor": {
-        "groupName": "unlock-js npm package"
-      }
+        "groupName": "subgraph"
+      },
+      "matchFileNames": ["subgraph/**"]
+    },
+    {
+      "minor": {
+        "groupName": "eth-node"
+      },
+      "matchFileNames": ["docker/development/eth-node/**"]
     }
-  ]
+  ],
+  "rebaseWhen": "never",
+  "lockFileMaintenance": {
+    "enabled": true
+  }
 }

@@ -1,16 +1,16 @@
 import express from 'express'
-import signatureValidationMiddleware from '../middlewares/signatureValidationMiddleware'
+import { PurchaseController } from '../controllers/purchaseController'
+import { SignedRequest } from '../types'
 
-let router = express.Router()
-let purchaseController = require('../controllers/purchaseController')
+const purchaseController = new PurchaseController()
+const router: express.Router = express.Router({ mergeParams: true })
 
-router.use(
-  signatureValidationMiddleware.generateProcessor({
-    name: 'purchaseRequest',
-    required: ['recipient', 'lock', 'expiry'],
-    signee: 'recipient',
-  })
+router.get('/', (req, res) =>
+  purchaseController.info(req as SignedRequest, res)
 )
-router.post('/', purchaseController.purchase)
 
-module.exports = router
+router.post('/capture', (req, res) =>
+  purchaseController.capturePaymentIntent(req as SignedRequest, res)
+) // No signature needed
+
+export default router

@@ -1,18 +1,17 @@
-pragma solidity 0.5.14;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/utils/Address.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC20/SafeERC20.sol';
-
+import "./MixinErrors.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 /**
  * @title An implementation of the money related functions.
- * @author HardlyDifficult (unlock-protocol.com)
  */
-contract MixinFunds
-{
-  using Address for address payable;
-  using SafeERC20 for IERC20;
+contract MixinFunds is MixinErrors {
+  using AddressUpgradeable for address payable;
+  using SafeERC20Upgradeable for IERC20Upgradeable;
 
   /**
    * The token-type that this Lock is priced in.  If 0, then use ETH, else this is
@@ -20,54 +19,17 @@ contract MixinFunds
    */
   address public tokenAddress;
 
-  function _initializeMixinFunds(
-    address _tokenAddress
-  ) internal
-  {
+  function _initializeMixinFunds(address _tokenAddress) internal {
+    _isValidToken(_tokenAddress);
     tokenAddress = _tokenAddress;
-    require(
-      _tokenAddress == address(0) || IERC20(_tokenAddress).totalSupply() > 0,
-      'INVALID_TOKEN'
-    );
   }
 
-  /**
-   * Gets the current balance of the account provided.
-   */
-  function getBalance(
-    address _tokenAddress,
-    address _account
-  ) public view
-    returns (uint)
-  {
-    if(_tokenAddress == address(0)) {
-      return _account.balance;
-    } else {
-      return IERC20(_tokenAddress).balanceOf(_account);
-    }
-  }
-
-  /**
-   * Ensures that the msg.sender has paid at least the price stated.
-   *
-   * With ETH, this means the function originally called was `payable` and the
-   * transaction included at least the amount requested.
-   *
-   * Security: be wary of re-entrancy when calling this function.
-   */
-  function _chargeAtLeast(
-    uint _price
-  ) internal returns (uint)
-  {
-    if(_price > 0) {
-      if(tokenAddress == address(0)) {
-        require(msg.value >= _price, 'NOT_ENOUGH_FUNDS');
-        return msg.value;
-      } else {
-        IERC20 token = IERC20(tokenAddress);
-        token.safeTransferFrom(msg.sender, address(this), _price);
-        return _price;
-      }
+  function _isValidToken(address _tokenAddress) internal view {
+    if (
+      _tokenAddress != address(0) &&
+      IERC20Upgradeable(_tokenAddress).totalSupply() < 0
+    ) {
+      revert INVALID_TOKEN();
     }
   }
 
@@ -78,18 +40,19 @@ contract MixinFunds
    */
   function _transfer(
     address _tokenAddress,
-    address _to,
+    address payable _to,
     uint _amount
-  ) internal
-  {
-    if(_amount > 0) {
-      if(_tokenAddress == address(0)) {
+  ) internal {
+    if (_amount > 0) {
+      if (_tokenAddress == address(0)) {
         // https://diligence.consensys.net/blog/2019/09/stop-using-soliditys-transfer-now/
-        address(uint160(_to)).sendValue(_amount);
+        _to.sendValue(_amount);
       } else {
-        IERC20 token = IERC20(_tokenAddress);
+        IERC20Upgradeable token = IERC20Upgradeable(_tokenAddress);
         token.safeTransfer(_to, _amount);
       }
     }
   }
+
+  uint256[1000] private __safe_upgrade_gap;
 }

@@ -1,68 +1,73 @@
-require('dotenv').config()
+require('./envLoader')
+const networks = require('@unlock-protocol/networks')
 
-module.exports = {
-  development: {
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOSTNAME,
-    dialect: 'postgres',
-    operatorsAliases: false,
-    stripeSecret: process.env.STRIPE_SECRET,
-    web3ProviderHost: process.env.WEB3_PROVIDER_HOST,
-    unlockContractAddress: process.env.UNLOCK_CONTRACT_ADDRESS,
-    purchaserAddress: process.env.PURCHASER_ADDRESS,
-    purchaserCredentails: process.env.PURCHASER_CREDENTIALS,
-    graphQLBaseURL: process.env.GRAPHQL_BASE_URL,
-    metadataHost: process.env.METADATA_HOST,
-    jaeger: {
-      serviceName: 'locksmith',
-      tags: [],
-      port: 6832,
-      maxPacketSize: 65000,
-    },
-  },
-  test: {
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOSTNAME,
+const defenderRelayCredentials = {}
+Object.values(networks).forEach((network) => {
+  defenderRelayCredentials[network.id] = {
+    relayerApiKey: process.env[`DEFENDER_RELAY_KEY_${network.id}`] || '',
+    relayerApiSecret: process.env[`DEFENDER_RELAY_SECRET_${network.id}`] || '',
+  }
+})
+
+const config = {
+  database: {
     logging: false,
     dialect: 'postgres',
-    operatorsAliases: false,
-    stripeSecret: process.env.STRIPE_SECRET,
-    web3ProviderHost: process.env.WEB3_PROVIDER_HOST,
-    unlockContractAddress: process.env.UNLOCK_CONTRACT_ADDRESS,
-    purchaserAddress: process.env.PURCHASER_ADDRESS,
-    purchaserCredentails: process.env.GRAPHQL_BASE_URL,
-    graphQLBaseURL: process.env.GRAPHQL_BASE_URL,
-    metadataHost: process.env.METADATA_HOST,
-    jaeger: {
-      serviceName: 'locksmith',
-      tags: [],
-      port: 6832,
-      maxPacketSize: 65000,
-    },
   },
-  production: {
-    username: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOSTNAME,
-    dialect: 'postgres',
-    operatorsAliases: false,
-    stripeSecret: process.env.STRIPE_SECRET,
-    web3ProviderHost: process.env.WEB3_PROVIDER_HOST,
-    unlockContractAddress: process.env.UNLOCK_CONTRACT_ADDRESS,
-    purchaserAddress: process.env.PURCHASER_ADDRESS,
-    purchaserCredentails: process.env.PURCHASER_CREDENTIALS,
-    graphQLBaseURL: process.env.GRAPHQL_BASE_URL,
-    metadataHost: process.env.METADATA_HOST,
-    jaeger: {
-      serviceName: 'locksmith',
-      tags: [],
-      port: 6832,
-      maxPacketSize: 65000,
-    },
+  stripeSecret: process.env.STRIPE_SECRET,
+  defaultNetwork: 1,
+  purchaserCredentials:
+    process.env.PURCHASER_CREDENTIALS ||
+    '0x08491b7e20566b728ce21a07c88b12ed8b785b3826df93a7baceb21ddacf8b61',
+  unlockApp: process.env.UNLOCK_APP || 'https://app.unlock-protocol.com',
+  logging: false,
+  services: {
+    wedlocks: process.env.WEDLOCKS || 'http://localhost:1337',
+  },
+  recaptchaSecret: process.env.RECAPTCHA_SECRET,
+  logtailSourceToken: process.env.LOGTAIL,
+  requestTimeout: '25s',
+  defenderRelayCredentials,
+  sentry: {
+    dsn: 'https://30c5b6884872435f8cbda4978c349af9@o555569.ingest.sentry.io/5685514',
   },
 }
+
+if (process.env.ON_HEROKU) {
+  // Heroku needs this:
+  config.database.ssl = true
+  config.database.dialectOptions = {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false,
+    },
+  }
+}
+
+// Database URL
+if (process.env.DATABASE_URL) {
+  const databaseConfigUrl = new URL(process.env.DATABASE_URL)
+  config.database.username = databaseConfigUrl.username
+  config.database.password = databaseConfigUrl.password
+  config.database.host = databaseConfigUrl.hostname
+  config.database.port = databaseConfigUrl.port
+  config.database.database = databaseConfigUrl.pathname.substring(1)
+} else {
+  config.database.username = process.env.DB_USERNAME
+  config.database.password = process.env.DB_PASSWORD
+  config.database.database = process.env.DB_NAME
+  config.database.host = process.env.DB_HOSTNAME
+  config.database.options = {
+    dialect: 'postgres',
+  }
+}
+
+if (process.env.UNLOCK_ENV === 'prod') {
+  config.services.wedlocks =
+    'https://wedlocks.unlock-protocol.com/.netlify/functions/handler'
+} else if (process.env.UNLOCK_ENV === 'staging') {
+  config.services.wedlocks =
+    'https://staging-wedlocks.unlock-protocol.com/.netlify/functions/handler'
+}
+
+module.exports = config

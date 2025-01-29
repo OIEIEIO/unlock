@@ -1,8 +1,9 @@
 import express from 'express'
 import signatureValidationMiddleware from '../middlewares/signatureValidationMiddleware'
 import MetadataController from '../controllers/metadataController'
+import { createCacheMiddleware } from '../utils/middlewares/cacheMiddleware'
 
-const router = express.Router()
+const router: express.Router = express.Router({ mergeParams: true })
 
 const metaDataConfiguration = {
   name: 'LockMetaData',
@@ -49,7 +50,6 @@ router.put(
   signatureValidationMiddleware.generateProcessor(userMetaDataConfiguration)
 )
 
-// Reads the user centric metadata
 router.get(
   '/:address/user/:userAddress',
   signatureValidationMiddleware.generateSignatureEvaluator(
@@ -72,10 +72,10 @@ router.get(
 )
 
 router.get('/:address/keyHolderMetadata', MetadataController.keyHolderMetadata)
-router.get('/:address/:keyId', MetadataController.data)
+router.get('/:address/:keyId', createCacheMiddleware(), MetadataController.data)
 router.put('/:address/:keyId', MetadataController.updateKeyMetadata)
 router.put('/:address', MetadataController.updateDefaults)
 router.put('/:address/user/:userAddress', MetadataController.updateUserMetadata)
 router.get('/:address/user/:userAddress', MetadataController.readUserMetadata)
 
-module.exports = router
+export default router

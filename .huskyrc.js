@@ -1,21 +1,14 @@
-const tasks = tasks => {
+const tasks = (tasks) => {
   return tasks
-    .map(task => {
+    .map((task) => {
       return `cd ${__dirname}/${task.path} && ${task.command}`
     })
     .join(`&& cd ${__dirname} && `)
 }
 
-// If svg files are changed, generate the SVG Components
-const svg2Components = {
-  command:
-    'if [[ $(git diff --cached --name-only | grep -c "unlock-app/src/static/images/svg/.*.svg$") > 0 ]] ; then npm run svg-2-components && git add src/components/interface/svg/*.js; fi',
-  path: 'unlock-app',
-}
-
 // Run eslint on the files inside path for the last commit
 // It will try to amend the latest commit if possible to fix.
-const eslint = path => {
+const eslint = (path) => {
   return {
     command: `git diff --name-only --diff-filter=d $(git merge-base origin/master HEAD) | grep "^${path}.*js$" | sed 's/${path}\\///' | xargs eslint --fix`,
     path: path,
@@ -23,7 +16,7 @@ const eslint = path => {
 }
 
 // lintStaged actually just runs formatting rules on staged files
-const lintStaged = path => {
+const lintStaged = (path) => {
   return { command: `echo ${path} && lint-staged`, path: path }
 }
 
@@ -31,23 +24,21 @@ const subDirs = [
   'locksmith',
   'paywall',
   'smart-contracts',
+  'governance',
   'tests',
   'unlock-app',
-  'tickets',
   'paywall',
   'unlock-js',
   'unlock-protocol.com',
 ]
 
-const prePushTasks = subDirs.map(dir => {
+const prePushTasks = subDirs.map((dir) => {
   return eslint(dir)
 })
 
-const preCommitTasks = subDirs.map(dir => {
+const preCommitTasks = subDirs.map((dir) => {
   return lintStaged(dir)
 })
-
-preCommitTasks.push(svg2Components)
 
 const config = {
   hooks: {

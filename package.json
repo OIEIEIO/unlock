@@ -1,53 +1,75 @@
 {
   "name": "unlock",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Unlock is a protocol for decentralized access control",
   "main": "index.js",
+  "private": true,
   "directories": {
     "doc": "docs"
   },
   "dependencies": {
-    "@typescript-eslint/eslint-plugin": "2.14.0",
-    "@typescript-eslint/parser": "2.14.0",
-    "babel-eslint": "10.0.3",
-    "babel-jest": "24.9.0",
-    "eslint": "5.16.0",
-    "eslint-config-airbnb": "18.0.1",
-    "eslint-config-prettier": "6.9.0",
-    "eslint-config-standard": "14.1.0",
-    "eslint-import-resolver-typescript": "2.0.0",
-    "eslint-plugin-import": "2.19.1",
-    "eslint-plugin-jest": "23.3.0",
-    "eslint-plugin-jsx-a11y": "6.2.3",
-    "eslint-plugin-mocha": "6.2.2",
-    "eslint-plugin-node": "11.0.0",
-    "eslint-plugin-prettier": "3.1.2",
-    "eslint-plugin-promise": "4.2.1",
-    "eslint-plugin-react": "7.17.0",
-    "eslint-plugin-react-hooks": "2.3.0",
-    "eslint-plugin-standard": "4.0.1",
-    "jest": "24.9.0",
-    "link-parent-bin": "1.0.2",
-    "lint-staged": "8.2.1",
-    "netlify-cli": "2.25.0",
-    "prettier": "1.19.1",
-    "ts-jest": "24.2.0",
-    "typescript": "3.7.4"
-  },
-  "engines": {
-    "node": "^10"
+    "@babel/core": "7.26.0",
+    "@typescript-eslint/eslint-plugin": "8.19.0",
+    "@typescript-eslint/parser": "8.19.0",
+    "babel-plugin-polyfill-corejs2": "0.4.12",
+    "node-gyp": "11.0.0",
+    "prettier-plugin-solidity": "1.4.1",
+    "typescript": "5.7.2"
   },
   "devDependencies": {
-    "husky": "3.1.0"
+    "@vitest/coverage-v8": "2.1.8",
+    "@vitest/eslint-plugin": "1.1.24",
+    "eslint": "9.14.0",
+    "eslint-plugin-evm-address-to-checksummed": "0.0.6",
+    "eslint-plugin-json": "4.0.1",
+    "eslint-plugin-mocha": "10.5.0",
+    "eslint-plugin-prettier": "5.2.1",
+    "eslint-plugin-sort-keys-fix": "1.1.2",
+    "husky": "9.1.7",
+    "lint-staged": "15.3.0",
+    "prettier": "3.4.2",
+    "typescript-eslint": "8.19.0",
+    "vitest": "2.1.8"
   },
+  "workspaces": [
+    "packages/**",
+    "governance",
+    "smart-contracts",
+    "subgraph",
+    "tests",
+    "unlock-app",
+    "unlock-js",
+    "unlock-protocol-com",
+    "locksmith",
+    "paywall",
+    "paywall-app",
+    "wedlocks",
+    "provider",
+    "docs",
+    "graph-service"
+  ],
   "scripts": {
-    "link-parent-bin": "link-parent-bin -c . -s true",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "./scripts/postinstall.sh",
-    "build": "cd smart-contracts && npm run build && cd ../unlock-app && npm run build && cd ../locksmith && npm run build",
-    "start": "./scripts/start.sh",
+    "packages": "yarn workspaces foreach --recursive --from '{@unlock-protocol/types,@unlock-protocol/core,@unlock-protocol/eslint-config,@unlock-protocol/hardhat-helpers,@unlock-protocol/express,@unlock-protocol/contracts,@unlock-protocol/networks,@unlock-protocol/paywall,@unlock-protocol/unlock-js,@unlock-protocol/crypto-icon,@unlock-protocol/ui,@unlock-protocol/hardhat-plugin,@unlock-protocol/email-templates}'",
+    "packages:clean": "yarn packages --parallel run clean",
+    "packages:build": "yarn packages --topological-dev run build",
+    "packages:publish": "yarn packages --parallel --verbose npm publish --tolerate-republish",
+    "apps:build": "yarn workspace @unlock-protocol/locksmith run build",
+    "build": "yarn packages:clean && yarn packages:build",
+    "packages:version": "yarn packages version --deferred",
+    "version:apply": "yarn version apply --all",
+    "version:check": "yarn version check --interactive",
+    "bump": "yarn packages:version patch && yarn version:apply",
+    "release": "yarn build && yarn bump && yarn packages:publish",
+    "start": "yarn start:infra && yarn start:apps",
+    "start:infra": "./scripts/start-infra.sh",
+    "start:apps": "./scripts/start-apps.sh",
+    "logs:infra": "./scripts/start/logs.sh",
+    "stop": "./scripts/stop.sh",
     "nuke": "./scripts/nuke.sh",
-    "start-locksmith": "cd locksmith && npm start"
+    "lint": "yarn packages --parallel run lint",
+    "lint:contracts": "yarn workspace @unlock-protocol/smart-contracts lint:contracts --fix",
+    "postinstall": "husky install"
   },
   "repository": {
     "type": "git",
@@ -64,5 +86,15 @@
   "bugs": {
     "url": "https://github.com/unlock-protocol/unlock/issues"
   },
-  "homepage": "https://github.com/unlock-protocol/unlock#readme"
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "engineStrict": true,
+  "homepage": "https://github.com/unlock-protocol/unlock#readme",
+  "packageManager": "yarn@4.6.0",
+  "lint-staged": {
+    "*.{js,ts,tsx}": "yarn run lint --fix",
+    "*.{js,ts,tsx,sol,css,md}": "prettier --write --plugin=prettier-plugin-solidity",
+    "*.sol": "yarn lint:contracts --noPrompt"
+  }
 }

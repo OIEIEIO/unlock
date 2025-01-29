@@ -1,31 +1,39 @@
 import forge from 'node-forge'
-import { Base64 } from 'js-base64'
-
+import { vi, describe, beforeAll, expect, it } from 'vitest'
 import { verifyEmailSignature } from '../../utils/wedlocks'
 
 const emailAddressToSign = 'julien@unlock-protocol.com'
-let signature, base64PublicKey
+let signature
+let base64PublicKey
 
-// These tests are slow because we generate private keys
-jest.setTimeout(15000)
-
-describe('verifyEmailSignature', () => {
-  beforeAll(done => {
-    forge.rsa.generateKeyPair({ bits: 2048, workers: 2 }, function(
-      err,
-      keypair
-    ) {
+const generateKeyPair = async () => {
+  return new Promise((resolve, reject) => {
+    forge.rsa.generateKeyPair({ bits: 2048, workers: 2 }, (err, keypair) => {
+      if (err) {
+        reject(err)
+        throw err
+      }
       const privateKeyPem = forge.pki.privateKeyToPem(keypair.privateKey)
       const publicKey = forge.pki.publicKeyToPem(keypair.publicKey)
-      base64PublicKey = Base64.encode(publicKey)
+      base64PublicKey = Buffer.from(publicKey).toString('base64')
       // First, let's create a signature!
       const md = forge.md.sha1.create()
       md.update(emailAddressToSign, 'utf8')
       const privateKey = forge.pki.privateKeyFromPem(privateKeyPem)
       const signed = privateKey.sign(md)
       signature = Buffer.from(signed).toString('base64')
-      done()
+      return resolve({
+        signature,
+        privateKey,
+        base64PublicKey,
+        emailAddressToSign,
+      })
     })
+  })
+}
+describe('verifyEmailSignature', () => {
+  beforeAll(async () => {
+    await generateKeyPair()
   })
 
   it('should return true if the signature matches the wedlocks public key', () => {
@@ -52,5 +60,12 @@ describe('verifyEmailSignature', () => {
         base64PublicKey
       )
     ).toBe(false)
+  })
+
+  it('pulls the public key out of the config file if not provided in arguments', () => {
+    expect.assertions(1)
+    expect(verifyEmailSignature('another@unlock-protocol.com', signature)).toBe(
+      false
+    )
   })
 })

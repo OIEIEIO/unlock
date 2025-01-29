@@ -1,188 +1,206 @@
 # Smart Contracts
 
-This is the code for Unlock protocol's smart contracts.
-There are 2 "main" smart contracts:
+**This folder contains versions of Unlock protocol contracts that are currently UNDER DEVELOPMENT. For applications, please refer to the code in [@unlock-protocol/contracts](../packages/contracts) or directly use the npm package [`@unlock-protocol/contracts`](https://npmjs.com/package/@unlock-protocol/contracts)**
 
-- Unlock
-- Lock
+You can also use the `../governance` folder to deploy Unlock on new networks and/or perform upgrades of existing networks.
 
-## High-Level overview of contracts & Interfaces
+---
 
-## Lock
+See [our docs](https://docs.unlock-protocol.com/developers/smart-contracts-architecture) for an overview of the smart contracts and [the smart-contract-extensions repo](https://github.com/unlock-protocol/unlock/tree/master/smart-contract-extensions) for integration examples. The deployment process itself is [on our wiki](https://github.com/unlock-protocol/unlock/wiki/Releasing-a-new-version-of-the-contracts).
 
-The lock contract is a smart contract “class”, deployed on an Ethereum Blockchain and written in Solidity. Each instance is owned by a creator and represents access to a given resource (or set of resources). The Lock keeps track of its keys, which are non fungible tokens. We do not expect any deployed lock to be upgraded, however we will likely introduce more complex versions of the Lock with more features or characteristics.
+## Run locally
 
-One of its characteristics is that instances of it are deployed **from the Unlock Protocol smart contract**. The goal of this is to guarantee that the Unlock Protocol smart contract can keep track of revenue it generates as well as decides of discounts when users purchase them. As such the “address” of the Unlock Smart Contract is kept in each Lock contract and can only be changed by the Unlock Smart Contract itself.
+Start hardhat node.
 
-The Lock Smart Contract should implement [ERC721](https://github.com/ethereum/eips/issues/721) . We should also make sure the token can be used with existing ecosystem elements such as protocols (0x) and existing applications (Metamask, Toshi, Rarebits…) which would ease user adoption.
+```
+yarn install
+yarn run hardhat node
+```
 
-One of the design decisions shaping the lock contract was to make it customizable so it can adapt to the very large set of capabilities which locks can cover.
+Then you can deploy the contracts locally
 
-It is worth considering whether we have a single "Lock" smart contract, or multiple different Lock smart contracts inheriting from the "base" Lock smart contract. The latter may actually a lot more cost efficient.
+```
+yarn run hardhat deploy
+```
 
-The Lock Smart Contract has multiple capabilities:
+### Run the tests
 
-- _Administrative_: these are the functions which change ownership of the lock or change the address of the Unlock Protocol smart contract, as well as the maximum number of keys, their release mechanism (public, pre-validated, private) or their expiration (period, date or interval) and of course their price (including the mechanism used to set the price: fixed or variable). Finally, there is a method to withdraw funds from the lock contract itself.
-- _Transfering key ownership_: keys can be purchased from the lock smart contract itself or from another user who purchased one previously. Another element is that keys can be purchased on behalf of somebody else (this is important because this lets somebody pay gas fees on behalf of somebody else)
-- _Changing key attributes_: the keys have an expiration date which can be changed (for an earlier date by the lock owner) as well as data attributes which can be changed to something else.
+```
+npx hardhat test
+```
 
-#### Structs
+To see all emitted events
 
-##### Key
+```
+npx hardhat test --logs
+```
 
-The key is a struct which encapsulate data relative to an individual key.
-It has the following fields:
+### Run a fork (mainnet, polygon, etc)
 
-- _Expiration date_ (date): the timestamp at which the key is not considered valid anymore. The lock owner only can change this value, effectively expiring individual keys.
-- _Data field (string)_: this can be changed only by the key owner who may use this to mark the key. The size of this field is unbounded and should be used as a pointer to the actual data. It can also be used to store encrypted data to identify the key owner.
+To test on a [network fork](https://hardhat.org/guides/mainnet-forking.html#forking-from-mainnet), you need to export `RUN_FORK=xxx` to your env, where `xxx` is the chain id of the network.
 
-#### Data
+ex .
 
-1. Unlock Protocol address (UPC): This is the address of the Unlock Protocol Contract. It is set upon creation of the Lock and will be used to invoke the Lock when recording key purchases and more.
+```
+export RUN_FORK=1
 
-2. Owner address: Address of the owner of the Lock smart contract. This address is able to withdraw funds from the contract as well as grant keys, authorize individual purchases (if applicable)… etc.
+npx hardhat node
+// Running a mainnet fork...
 
-3. Keys: This is a mapping of addresses to keys which represents the list of keys. In our approach each address can own at most one key per lock. We anticipate that smart contracts can themselves be key owners, allowing for shared ownership of a given key.
+export RUN_FORK=100 # xdai
+export RUN_FORK=5 # rinkeby
+...
+```
 
-4. Owners: This is an array of all the owners of keys. It can be used to iterate over the keys.
+Once you have mainnet running locally, you can run the relevant tests in another terminal:
 
-5. Expiration Duration: This is the number of seconds during which each created key for this lock is valid by default when purchased. Lock owners can change individual key duration at their own discretion but the “default” is fixed.
+```
+export RUN_FORK=1
+yarn hardhat --network localhost test test/UnlockDiscountToken/upgrades.mainnet.js
+```
 
-6. Price: This is the price, expressed in Ether, of each individual key, set by the owner. This price can/should (TODO) be changed by the owner to reflect conversion rates if they want to provide a stable fiat currency price.
+Note that if the var `RUN_FORK` is not set, the tests named with the suffix `.mainnet.js` are skipped and will be marked as pending on the CI.
 
-7. Max number of keys: The beneficiary can decide of a maximum number of keys to be sold publicly. If none is set (TODO), the contract can sell an unlimited number of keys.
+### Setup networks
 
-8. List of approved transfers. This is applicable to both the lock owner approving new key purchasers or key owners approving another user to take over their key.
+To set up a network for deployment, change `networks.js` to add your networks and/or change the provider used (defaults might be slower/rate limited).
 
-#### Methods
+### Setup account
 
-##### Administrative
+We use the `DEPLOYER_PRIVATE_KEY` environment variable to interact with contracts. Please set it.
 
-These are the function which change some parameters for the Lock or check its status
+### Run the UDT contract upgrade
 
-- setKeyPrice (TODO) : updates the price of new keys
-- totalSupply : get the number of outstanding keys
-- numberOfOwners : get the total number of unique owners (both expired and valid).  This may be larger than totalSupply.
-- balanceOf (ERC721) : get the number of keys for a given owner (0 or 1)
-- ownerOf (ERC721) : get the owner of a key (if applicable)
-- keyDataFor : get the value of the data field for a key
-- keyExpirationTimestampFor : get the expiration date for a key
-- getApproved (ERC721) : get the address of the approved recipient for a key ()
-- withdraw : lets the owner of the lock withdraw the funds on the lock
+Once your network are setup, you can run the UDT contract upgrade
 
-#### Transfering key owner:
+```
+npx hardhat run scripts/udt-upgrade.js --network goerli
+```
 
-Keys can be purchased from the lock smart contract itself or from another user. Another important element is that keys can be purchased on behalf of somebody else (this is important because this lets somebody pay Eth fees on behalf on somebody else)
+## Upgrade a contract
 
-- purchaseFor : purchases a key for a given address and sets its data field
-- purchaseForFrom : purchases a key for a given address after a referral and sets its data field.
-- transferFrom (ERC721) : transfers ownership of a key
-- approve (ERC721) : approve transfer of a key
+### Prepare and test the new contract on a mainnet node
 
-#### Changing key attributes:
+```
+# setup credentials
+export RUN_FORK=1
 
-The keys have an expiration date which can be changed (for an earlier date by the lock owner), or data attributes which can be changed to something else, by their owner only.
+# run the tests
+yarn test test/mainnet/udt.js
+```
 
-- expireKeyFor : Expires an existing
-- changeKeyData (TODO) : change the data field for a given key
+### Unlock
 
-#### Modifiers
+```
+$ npx hardhat upgrade --contract contracts/Unlock.sol --network localhost
+Deploying new implemntation on mainnet...
+Unlock V9 implementation deployed at: <contract-address>
 
-We use modifiers to restrict calls to certain functions.
+#  verify the implementation contract
+ETHERSCAN_API_KEY=<your-api-key> yarn verify <contract-address>
+```
 
-- onlyPublic : can only be called on public locks
-- onlyLockOwnerOnRestrictedOrKeyOwnerInPublic : can only be called by the lock owner on a restricted or public lock or by the key owner on a public lock.
-- hasKey : can only be called for existing key
-- hasValidKey : can only be called for existing and valid key
-- onlyKeyOwner : can only be called by the owner of the key
-- onlyPublicOrApproved : Ensures that the lock is public or that the sender has been approved on restricted locks
-- onlyKeyOwnerOrApproved : Ensures that the caller has a key or that the caller has been approved for ownership of that key
-- notSoldOut : Ensures that not all keys have been sold.
+### Get implementation address
 
-#### Events
+```
+npx hardhat impl --contract contracts/<YourContract.sol>
+> implementation address: <address>
+```
 
-TK
+NB: for Polygon, you need an API key from https://polygonscan.com
 
-## Unlock
+### Update PublicLock template
 
-The Unlock Smart contract is only deployed once. It has several roles:
+#### Check changes in storage layout
 
-- Deploying Locks: locks are deployed through the Unlock smart contract. This is important because the Locks will actually invoke the Unlock smart contract when keys are sold and the Unlock smart contract will check that the invoking lock has been deployed through it.
-- Keeping Track of the Unlock Discount Tokens. Unlock Discount Tokens are ERC20 tokens (TODO) which implement the Unlock network loyalty program. The Discount Tokens are granted when keys are purchased, either thru referrals or when a creator grants a discount.
-- Granting Discount. The Unlock smart contract will compute the available discount for each key purchase based on the amount of discount tokens owned by the key buyer.
+```
+yarn hardhat run scripts/lock/testUpgrade.js
+```
 
-This smart contract needs to be "upgradable" to deploy changes. It is critical that its address does not change however so that all the Locks deployed by it can still access it.
-We are using zeppelinOS (zOS) to enable upgradeability. This requires us to use openzeppelin-eth (instead of openzeppelin-solidity), as its contracts have been modified to use init functions instead of constructors. Openzeppelin-solidity does not work correctly!
+Note: you need to update the `LATEST_PUBLIC_LOCK_VERSION` in the script.
 
-#### Structs
+This script is use to check the changes in storage layout between two upgrades
+using the openzeppellin plugin. It will deploy first the version `LATEST_PUBLIC_LOCK_VERSION`
+then deploy the version in `contracts/PublicLock.sol`. The errors thrown by the upgrades plugin
+should allow to detect changes in storage layout.
 
-##### LockBalances
+#### Test the PublicLock template on mainnet fork
 
-The LockBalances is a struct which encapsulate data relative to an individual lock deployed through the smart contract. Keeping these balances will help us assess how many discount tokens a given lock can yield optimaly.
+Make a dry run of the upgrade on a mainnet fork by
 
-It has the following fields:
+- deploy the specified PublicLock tempalte
+- parse the calldata for `addLockTemplate`
+- send the calldata tx to the multisig
+- impersonate all signers to run the tx
 
-- _deployed_ (boolean) : A boolean to indicate that a lock has been deployed (this is required because both default values for `tokenSales` and `yieldedDiscountTokens` are 0 which is the same for non deployed locks).
-- _totalSales_ (unsigned integer) : An unsigned integer to keep track of the total sales for this lock.
-- _yieldedDiscountTokens_ (unsigned integer): An unsigned integer to keep track of the total number of discount tokens yielded through that lock.
+```shell
+# to deploy a version already in the contracts package
+RUN_FORK=1 yarn hardhat submit:version --public-lock-version 12
 
-#### Data
+# to deploy a version from the local ./contracts folder
+RUN_FORK=1 yarn hardhat submit:version
+```
 
-1. Owner of the Unlock Discount Token smart contract. This is by default the deployer of the Unlock smart contract but all discount token holders can eventually vote to replace that owner.
+## Deploy Governor + Timelock
 
-2. Max available discount share (TODO): this is the first golden rule of the protocol, fixed at 20% for now. The owner only can adjust that value.
+```
+yarn hardhat deploy:governor
 
-3. Max growth rate for the token supply (TODO): this is the 2nd golden rule of the protocol, fixed at 50% of the network growth for now. The owner only can adjust that value.
+Deploying Governor on localhost with the account: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266...
+> Timelock w proxy deployed at: 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+> Governor deployed (w proxy) at: 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
+> Governor added to Timelock as sole proposer.  0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 is Proposer: true
+> Unlock Owner recounced Admin Role.  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 isAdmin: false
+```
 
-4. The total network's gross product (TODO): this is the total sales generated on the network for all keys sold from all locks. We should also "snapshot" that value at intervals to keep track of the network's growth rate.
+## Release a new version of a contract
 
-5. This is the total amount of discounts granted (TODO). This is akin to the total network's gross product and used to compute the total available discount at any point in time.
+1. Create a PR where you update the version number in the contract
+2. Make you changes and add/fix relevant tests
+3. add an upgrade test following the model in `test/Lock/upgrades` folder
+4. Release the new versions of the contracts into the `contracts` package
+   using the following command.
 
-6. A mapping of lock addresses into LockBalances which is used to ensure that only deployed locks are invoking certain methods. The data is also used to make sure each Lock only distributes an "appropriate" number of discount tokens.
+```
+yarn hardhat release --contract contracts/<xxx>.sol
+```
 
-7. Token name (ERC20 TODO)
+5. Bump version number and edit changelog in `contracts` package
+6. Once your release is ready to roll, update the `UNLOCK_LATEST_VERSION` and `PUBLICLOCK_LATEST_VERSION` in both contracts and hardhat-plugin package.
+7. Update unlockjs lib with new features and changes
+8. Update unlock-app to use the newest version of unlockjs
+9. Deploy a test version on testnet (Sepolia) to be tested against the staging website
 
-8. Symbol (ERC20 TODO)
+```
+yarn hardhat deploy:protocol-upgrade --unlock-version <xxx> --public-lock-version <xxx> --network sepolia
+```
 
-9. Decimals (ERC20 TODO)
+10. For DAO-governed chains, deploy implementations for all networks and send a (cross-chain) proposal with the upgrade logic (following the [previous proposal](../governance/proposals/udt/009-protocol-upgrade.js) as template ).
 
-10. Total supply of discount tokens (ERC20 TODO)
+```
+# for unlock
+yarn hardhat unlock:upgrade --unlock-version <xxx>
 
-11. Balances of Discount Tokens balances (ERC20 TODO)
+# for publiclock
+yarn hardhat deploy:template --public-lock-version <xxx>
+```
 
-12. Allowed transfers of Discount Tokens (ERC20 TODO)
+11. For other chains, you can send directly a tx to the team multisig using
 
-#### Methods
+```
+yarn hardhat deploy:protocol-upgrade --unlock-version <xxx> --public-lock-version <xxx> --network <xxx>
+```
 
-##### ERC20
+12. Once all txs from dao and multisig have been executed, update the `publicLockVersionToDeploy` param in all network files of the networks package to the latest publicLock version
 
-See https://theethereum.wiki/w/index.php/ERC20_Token_Standard
+## Locks
 
-##### Locks
+### Serialize an existing lock
 
-The Unlock smart contract provides several functions to handle locks. One of them is to deploy them and previously deployed locks (and only them) can invoke a set of functions on the Unlock Smart Contract.
+```
+# deploy LockSerializer contract
+yarn deploy:serializer --network localhost
 
-- createLock: This function can be invoked by anyone and will deploy a lock which belongs to them. The Lock can be deployed with its key release mechanism (public, restricted, private), the duration for each key, the price for each key and the maximum number of keys per lock.
-
-- computeAvailableDiscountFor: This function does not change the state. When provided a user's address, and the price of a key, it will return a pair which corresponds to the maximum discount available to a user. That pair includes both the amount of discount (in Eth) and the balance of the user's discount tokens used to provide that discount.
-
-- recordKeyPurchase: This function can only be invoked by previously deployed locks. This function keeps track of the added GDP, as well as grants of discount tokens to the referrer, if applicable. The number of discount tokens granted is based on the value of the referal, the current growth rate and the lock's discount token distribution rate.
-
-- recordConsumedDiscount: This function can only be invoked by previously deployed locks and keeps track of consumed discounts by a given user. It also grants discount tokens to the creator who is granting the discount based on the amount of discount and compensation rate.
-
-#### Modifiers
-
-We use modifiers to restrict calls to certain functions.
-
-- onlyFromDeployedLock: this method can only be invoked by a previously deployed lock.
-
-#### Events
-
-TODO
-
-## Usage
-
-The smart contracts are written in solidity using the [truffle framework](http://truffleframework.com/).
-The can be compiled using `truffle compile` and tested using `truffle test`. Make sure dependencies are installed before running commands: `npm install`.
-
-Later this will also be used to deploy to the test and main chains.
+# copy data of a lock locally
+yarn hardhat lock:serialize --lock-address 0x... --deployer-address 0x... -- --network localhost
+```

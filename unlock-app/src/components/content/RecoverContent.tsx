@@ -1,126 +1,169 @@
-import queryString from 'query-string'
-import { connect } from 'react-redux'
-import React from 'react'
-import Head from 'next/head'
-import Layout from '../interface/Layout'
-import { pageTitle } from '../../constants'
-import Errors from '../interface/Errors'
-import { Heading, Instructions, Label } from '../interface/FinishSignup'
-import { SetPassword, Credentials } from '../interface/SetPassword'
-import { Router, Account } from '../../unlockTypes'
-import { changePassword } from '../../actions/user'
+'use client'
+
+import { useState, useEffect } from 'react'
+import { SetPassword } from '../interface/SetPassword'
 import Loading from '../interface/Loading'
+import { reEncryptPrivateKey } from '../../utils/accounts'
+import UnlockProvider from '../../services/unlockProvider'
 
-interface Props {
-  account?: Account
-  emailAddress?: string
-  recoveryPhrase?: string
-  changePassword: (credentials: Credentials, password: string) => any
+import { Badge } from '@unlock-protocol/ui'
+import { locksmith } from '~/config/locksmith'
+import { useSearchParams } from 'next/navigation'
+import { config } from '~/config/app'
+import Link from 'next/link'
+
+interface RestoreAccountProps {
+  config: any
+  email: string
+  recoveryKey: any
+  network: number
 }
-interface StoreState {
-  router: Router
-  account?: Account
-  recoveryPhrase: string
-}
 
-export const RecoverContent = ({
-  account,
-  emailAddress,
-  changePassword,
-  recoveryPhrase,
-}: Props) => {
-  let form
+export const RestoreAccount = ({
+  config,
+  email,
+  recoveryKey,
+}: RestoreAccountProps) => {
+  const [provider, setProvider] = useState<any>(null) // Not ACTUALLY using the provider because the goal here is just to change the password, not to connect the user.
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [recoveryPhrase, setRecoveryPhrase] = useState('')
+  const [success, setSuccess] = useState(false)
 
-  let instructions = (
-    <div>
-      <Heading>Recover your Unlock Account</Heading>
-      <Instructions>Please, set a new password for your account.</Instructions>
-      <Label htmlFor="emailPlaceholder">Email</Label>
-      <p>{emailAddress}</p>
-    </div>
+  useEffect(() => {
+    setLoading(true)
+    const getRecoveryPhrase = async () => {
+      if (email) {
+        const result = await locksmith.getUserRecoveryPhrase(email)
+        const { recoveryPhrase } = result.data
+        if (!recoveryPhrase) {
+          setError('We do not have a valid recovery phrase for your user')
+          setLoading(false)
+        } else {
+          setRecoveryPhrase(recoveryPhrase) // should we do it only when we know it's the correcct one?
+
+          // We need to log the user in from the recoveryPhrase + recoveryKey!
+          // TODO: what network do we pick???
+          const unlockProvider = new UnlockProvider(config.networks[1])
+          try {
+            await unlockProvider.connect({
+              key: recoveryKey,
+              emailAddress: email,
+              password: recoveryPhrase,
+            })
+            setProvider(unlockProvider)
+          } catch (e) {
+            console.error(e)
+            setError(
+              'We could not process your recovery key. Please try again.'
+            )
+          }
+          setLoading(false)
+        }
+      }
+    }
+    getRecoveryPhrase()
+  }, [email, recoveryKey])
+
+  const resetPassword = async (newPassword: string) => {
+    setLoading(true)
+    const passwordEncryptedPrivateKey = await reEncryptPrivateKey(
+      recoveryKey,
+      recoveryPhrase,
+      newPassword
+    )
+    try {
+      const { data, signature } = await provider.signUserData({
+        passwordEncryptedPrivateKey,
+      })
+      await locksmith.updateUserEncryptedPrivateKey(email, data, signature)
+      setSuccess(true)
+      // TODO: send email for confirmation
+      // TODO: create new recovery key
+    } catch (error: any) {
+      setError('There was an error resettings your password. Please try again.')
+      console.error(error)
+    }
+    setLoading(false)
+  }
+
+  if (loading || !recoveryKey) {
+    return <Loading />
+  }
+
+  if (error) {
+    return <p>{error}</p>
+  }
+
+  if (success) {
+    return (
+      <div className="flex flex-col w-2/3 mx-auto gap-2">
+        <h1 className="text-4xl font-bold">Recover your Unlock Account</h1>
+        <p className="">
+          Your password was successfuly changed. However, your account needs to{' '}
+          <Link
+            className="text-brand-ui-primary underline"
+            href="/migrate-user"
+          >
+            be migrated
+          </Link>
+          .
+        </p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <div className="flex flex-col w-2/3 mx-auto gap-2">
+        <h1 className="text-4xl font-bold">Recover your Unlock Account</h1>
+        <p className="">Please, set a new password for your account.</p>
+        <div className="flex gap-2 mt-2 mb-3">
+          <Badge>{email}</Badge>
+        </div>
+
+        <SetPassword
+          loading={loading}
+          buttonLabel="Resetting password"
+          onSubmit={resetPassword}
+        />
+      </div>
+    </>
   )
+}
 
-  if (!emailAddress) {
-    // If there is no email, we will not be able to retrieve the recoveryPhrase
-    instructions = (
+export const RecoverContent = () => {
+  const searchParams = useSearchParams()
+
+  const email = searchParams.get('email')
+  let recoveryKey
+
+  try {
+    const recoveryKeyParam = searchParams.get('recoveryKey')
+    if (recoveryKeyParam) {
+      recoveryKey = JSON.parse(recoveryKeyParam)
+    }
+  } catch (error) {
+    console.error('We could not parse the recovery key')
+  }
+
+  if (!email || !recoveryKey) {
+    return (
       <div>
-        <Heading>Recover your Unlock Account</Heading>
-        <Instructions>
+        <h1 className="text-4xl font-bold">Recover your Unlock Account</h1>
+        <span className="text-sm font-thin">
           Your recovery link is not valid. Please try again.
-        </Instructions>
+        </span>
       </div>
-    )
-  } else if (!account) {
-    // If there is no account, then, we are probably trying to decrypt the key
-    // TODO: what if decrypting the key fails?
-    form = (
-      <div>
-        <Loading />
-        <p>Checking your recovery key... This may take a couple seconds.</p>
-      </div>
-    )
-  } else if (!recoveryPhrase) {
-    // The recovery phrase is unset after the password is reset, so if the recovery phrase is unset, but the account is set, then it means we have succefully changed the password!
-    form = (
-      <div>
-        <p>Your password was changed!</p>
-      </div>
-    )
-  } else {
-    form = (
-      <SetPassword
-        buttonLabel="Resetting password"
-        emailAddress={emailAddress}
-        onSubmit={credentials => changePassword(credentials, recoveryPhrase)}
-      />
     )
   }
 
   return (
-    <Layout title="Recover">
-      <Head>
-        <title>{pageTitle('Recover')}</title>
-      </Head>
-      {instructions}
-      <Errors />
-      {form}
-    </Layout>
+    <RestoreAccount
+      network={1} // Default to mainnet
+      config={config}
+      email={email.replace(' ', '+')}
+      recoveryKey={recoveryKey}
+    />
   )
 }
-
-export const mapDispatchToProps = (dispatch: any) => ({
-  changePassword: (credentials: Credentials, recoveryPhrase: string) => {
-    return dispatch(
-      changePassword(
-        recoveryPhrase, // oldPassword
-        credentials.password // newPassword
-      )
-    )
-  },
-})
-
-export const mapStateToProps = ({
-  router,
-  account,
-  recoveryPhrase,
-}: StoreState) => {
-  const query = queryString.parse(router.location.search)
-  let emailAddress = ''
-  if (query) {
-    if (query.email) {
-      if (typeof query.email === 'string') {
-        emailAddress = query.email
-      } else if (Array.isArray(query.email)) {
-        emailAddress = query.email[0]
-      }
-    }
-  }
-
-  return {
-    emailAddress,
-    account,
-    recoveryPhrase,
-  }
-}
-
-export default connect(mapStateToProps, mapDispatchToProps)(RecoverContent)
+export default RecoverContent

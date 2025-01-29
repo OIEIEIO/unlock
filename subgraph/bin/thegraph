@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+
+/**
+ * Interact with the graph
+ *
+ * Usage: node bin/thegraph --help
+ */
+const { hideBin } = require('yargs/helpers')
+const networks = require('@unlock-protocol/networks')
+const util = require('util')
+const exec = util.promisify(require('child_process').exec)
+const { networkName } = require('./networks')
+
+const executeCommand = async (command) => {
+  try {
+    const { stdout, stderr } = await exec(command)
+    console.log('stdout:', stdout)
+    if (stderr) {
+      console.log(`stderr: ${stderr}`)
+      return stderr
+    }
+  } catch (e) {
+    // should contain code (exit code) and signal (that caused the termination).
+    console.error(`exec error: ${e}`)
+  }
+}
+
+// use shorthand of git sha commit as version label
+const getVersion = () => {
+  const gitSha = require('child_process')
+    .execSync('git rev-parse --short HEAD')
+    .toString()
+    .trim()
+  return `${gitSha}`
+}
+
+const executeStudioDeploy = async ({
+  subgraphName,
+  version,
+  flags = '--product=subgraph-studio',
+}) => {
+  const cmd = `graph deploy --version-label="${version}" ${flags} ${subgraphName}`
+  let stderr = await executeCommand(cmd)
+  if (stderr) {
+    if (stderr.includes(`Version label already exists`)) {
+      console.log(
+        `Studio version '${version}' for ${subgraphName} exists - skipping`
+      )
+    }
+  }
+}
+
+const checkStudioAccessToken = () => {
+  if (!process.env.SUBGRAPH_STUDIO_DEPLOY_KEY) {
+    throw new Error(
+      `
+      Missing access token in SUBGRAPH_STUDIO_DEPLOY_KEY env.
+      You can get a token from https://thegraph.com/studio/
+      `
+    )
+  }
+}
+
+// Generate subgraph manifest
+const build = async (network) => {
+  console.log(`Building subgraph for ${network} (${networkName(network)})`)
+  await executeCommand(`yarn generate-manifest ${networkName(network)}.json`)
+  await executeCommand(`graph codegen`)
+}
+
+/**
+ * Deploys subgraph with studio
+ * @param version
+ * @param subgraphName
+ * @returns
+ */
+const deployStudio = async (subgraphName, version) => {
+  checkStudioAccessToken()
+  await executeCommand(
+    `graph auth --studio ${process.env.SUBGRAPH_STUDIO_DEPLOY_KEY}`
+  )
+  if (!version) {
+    version = getVersion()
+  }
+  return executeStudioDeploy({ subgraphName, version })
+}
+
+/**
+ * deploy command
+ * @param network
+ * @param studioName
+ * @param graphLabel
+ * @returns
+ */
+const deploy = async (network, studioName, graphLabel) => {
+  if (!network) {
+    throw new Error('Missing network name')
+  }
+
+  if (!networks[network]?.subgraph?.endpoint) {
+    // TODO: create subgraph automatically if necessary
+  }
+
+  if (!studioName) {
+    ;({ studioName } = networks[network].subgraph)
+  }
+
+  if (!studioName) {
+    throw new Error(
+      `Missing name for studio graph 
+(add it as 'studioName' to the '@unlock-protocol/networks' package 
+or use the '--studioName' flag)`
+    )
+  } else {
+    return deployStudio(studioName, graphLabel)
+  }
+}
+
+const choices = Object.keys(networks).filter(
+  (d) => !['networks', 'default', 'localhost'].includes(d)
+)
+
+require('yargs/yargs')(hideBin(process.argv))
+  .command(
+    'build <network>',
+    'build thegraph manifest and files',
+    (yargs) =>
+      yargs.positional('network', {
+        describe: 'the network to deploy',
+        choices,
+      }),
+    async ({ network }) => {
+      await build(network)
+    }
+  )
+  .command(
+    'deploy <network>',
+    'deploy subgraph to thegraph studio',
+    (yargs) =>
+      yargs.positional('network', {
+        describe: 'the network to deploy',
+        choices,
+      }),
+    async ({ network, studioName, label }) => {
+      await build(network)
+      await deploy(network, studioName, label)
+    }
+  )
+  .command(
+    'deploy-all',
+    'Deploy subgraph on all networks',
+    {},
+    async ({ label }) => {
+      // check config
+      console.log(
+        `Deploying subgraphs for:\n${choices.map((c) => ` - ${c}\n`).join('')}`
+      )
+
+      // build and deploy each network
+      for (const network of choices) {
+        await build(network)
+        await deploy(network, label)
+      }
+
+      console.log('Subgraph deployments done.')
+    }
+  )
+  .demandCommand()
+  .options({
+    label: {
+      type: 'string',
+      description: 'The version label to use for deployment',
+    },
+  })
+  .options({
+    studioName: {
+      type: 'string',
+      description: 'The name of the studio deployment',
+    },
+  })
+  .parse()

@@ -1,5 +1,5 @@
 import * as validators from '../../utils/validators'
-import { ONE_HUNDRED_YEARS_IN_DAYS } from '../../constants'
+import { vi, describe, beforeAll, expect, it } from 'vitest'
 
 describe('Form field validators', () => {
   it('isMissing', () => {
@@ -30,7 +30,7 @@ describe('Form field validators', () => {
   it('isLTE', () => {
     expect.assertions(6)
     const { isLTE } = validators
-    const isLTEOneHundredYearsInDays = isLTE(ONE_HUNDRED_YEARS_IN_DAYS)
+    const isLTEOneHundredYearsInDays = isLTE(36500)
 
     expect(isLTEOneHundredYearsInDays('-5')).toBeTruthy()
     expect(isLTEOneHundredYearsInDays('0')).toBeTruthy()
@@ -294,7 +294,7 @@ describe('Form field validators', () => {
           'submitted',
           'pending',
           'failed',
-        ])('should accept "%s" as a valid status', status => {
+        ])('should accept "%s" as a valid status', (status) => {
           expect.assertions(1)
 
           expect(

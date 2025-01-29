@@ -1,36 +1,30 @@
-const Units = require('ethereumjs-units')
-const Web3Utils = require('web3-utils')
-const BigNumber = require('bignumber.js')
+const assert = require('assert')
+const { ethers } = require('hardhat')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../helpers/proxy')
 const WalletService = require('../helpers/walletServiceMock.js')
+const { createLockCalldata } = require('@unlock-protocol/hardhat-helpers')
+const { ADDRESS_ZERO, deployContracts } = require('../helpers')
 
-let unlock
+describe('Unlock / gas', () => {
+  it('gas used to createLock is less than wallet service limit', async () => {
+    const { unlock } = await deployContracts()
+    const [signer] = await ethers.getSigners()
 
-contract('Unlock / gas', accounts => {
-  let createLockGas = new BigNumber(42)
-
-  beforeEach(async () => {
-    unlock = await getProxy(unlockContract)
-
-    let tx = await unlock.createLock(
+    const args = [
       60 * 60 * 24 * 30, // expirationDuration: 30 days
-      Web3Utils.padLeft(0, 40),
-      Units.convert(1, 'eth', 'wei'), // keyPrice: in wei
+      ADDRESS_ZERO,
+      ethers.parseUnits('1', 'ether'), // keyPrice: in wei
       100, // maxNumberOfKeys
       'Gas Test Lock',
-      '0x000000000000000000000000',
-      {
-        from: accounts[0],
-      }
-    )
-    createLockGas = new BigNumber(tx.receipt.gasUsed)
-  })
-
-  it('gas used to createLock is less than wallet service limit', async () => {
+    ]
+    const calldata = await createLockCalldata({
+      args,
+      from: await signer.getAddress(),
+    })
+    const tx = await unlock.createUpgradeableLock(calldata)
+    const { gasUsed } = await tx.wait()
     if (!process.env.TEST_COVERAGE) {
-      assert(createLockGas.lte(WalletService.gasAmountConstants().createLock))
+      assert(gasUsed <= WalletService.gasAmountConstants().createLock)
     }
   })
 })

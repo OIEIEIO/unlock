@@ -1,15 +1,13 @@
-import models = require('../../../src/models')
+import { ethers } from 'ethers'
+import UserOperations from '../../../src/operations/userOperations'
+import request from 'supertest'
+import app from '../../app'
+import { User, UserReference } from '../../../src/models'
+import * as Base64 from '../../../src/utils/base64'
 
-function generateTypedData(message: any) {
+function generateTypedData(message: any, messageKey: string) {
   return {
     types: {
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-        { name: 'salt', type: 'bytes32' },
-      ],
       User: [
         { name: 'emailAddress', type: 'string' },
         { name: 'publicKey', type: 'address' },
@@ -21,14 +19,12 @@ function generateTypedData(message: any) {
       version: '1',
     },
     primaryType: 'User',
-    message: message,
+    message,
+    messageKey,
   }
 }
 
 beforeAll(() => {
-  let UserReference = models.UserReference
-  let User = models.User
-
   return Promise.all([
     UserReference.truncate({ cascade: true }),
     User.truncate({ cascade: true }),
@@ -36,22 +32,12 @@ beforeAll(() => {
 })
 
 describe("updating a user's password encrypted private key", () => {
-  let models = require('../../../src/models')
-  let User = models.User
-  const request = require('supertest')
-  const sigUtil = require('eth-sig-util')
-  const ethJsUtil = require('ethereumjs-util')
-  const app = require('../../../src/app')
-
-  const UserOperations = require('../../../src/operations/userOperations')
-  const Base64 = require('../../../src/utils/base64')
-
-  let privateKey = ethJsUtil.toBuffer(
+  const wallet = new ethers.Wallet(
     '0xfd8abdd241b9e7679e3ef88f05b31545816d6fbcaf11e86ebd5a57ba281ce229'
   )
 
   describe('when the account is active', () => {
-    let message = {
+    const message = {
       user: {
         emailAddress: 'user@example.com',
         publicKey: '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2',
@@ -59,38 +45,40 @@ describe("updating a user's password encrypted private key", () => {
       },
     }
 
-    let typedData = generateTypedData(message)
-    const sig = sigUtil.signTypedData(privateKey, {
-      data: typedData,
-    })
+    const typedData = generateTypedData(message, 'user')
+
+    const { domain, types } = typedData
 
     it('updates the password encrypted private key of the user', async () => {
       expect.assertions(2)
 
-      let emailAddress = 'user@example.com'
+      const emailAddress = 'user@example.com'
 
-      let userCreationDetails = {
-        emailAddress: emailAddress,
+      const userCreationDetails = {
+        emailAddress,
         publicKey: '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
       }
 
       await UserOperations.createUser(userCreationDetails)
 
-      let response = await request(app)
+      const sig = await wallet.signTypedData(domain, types, message['user'])
+
+      const response = await request(app)
         .put(
           '/users/0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2/passwordEncryptedPrivateKey'
         )
-        .set('Accept', /json/)
+        .set('Accept', 'json')
         .set('Authorization', `Bearer ${Base64.encode(sig)}`)
         .send(typedData)
 
-      let user = await User.findOne({
+      const user = await User.findOne({
         where: { publicKey: '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2' },
       })
 
-      expect(user.passwordEncryptedPrivateKey).toEqual(
-        '{"data" : "New Encrypted Password"}'
+      // Serialize the object to JSON string before comparison
+      expect(JSON.stringify(user?.passwordEncryptedPrivateKey)).toEqual(
+        '{"data":"New Encrypted Password"}'
       )
       expect(response.status).toBe(202)
     })
@@ -99,28 +87,28 @@ describe("updating a user's password encrypted private key", () => {
   describe('when the account has been ejected', () => {
     it('returns a 404', async () => {
       expect.assertions(1)
-      let emailAddress = 'ejected_user@example.com'
-      let user = {
-        emailAddress: emailAddress,
-        publicKey: 'ejected_user_phrase_public_key',
+      const emailAddress = 'ejected_user@example.com'
+      const user = {
+        emailAddress,
+        publicKey: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
         passwordEncryptedPrivateKey: '{"data" : "encryptedPassword"}',
       }
 
       await UserOperations.createUser(user)
       await UserOperations.eject(user.publicKey)
 
-      let message = {
+      const message = {
         user,
       }
 
-      let typedData = generateTypedData(message)
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
+      const typedData = generateTypedData(message, 'user')
 
-      let response = await request(app)
+      const { domain, types } = typedData
+      const sig = await wallet.signTypedData(domain, types, message['user'])
+
+      const response = await request(app)
         .put(`/users/${user.publicKey}/passwordEncryptedPrivateKey`)
-        .set('Accept', /json/)
+        .set('Accept', 'json')
         .set('Authorization', `Bearer ${Base64.encode(sig)}`)
         .send(typedData)
 

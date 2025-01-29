@@ -1,0 +1,28 @@
+{
+  "name": "@unlock-protocol/unlock-express",
+  "version": "0.0.6",
+  "public": true,
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "lint": "yarn run eslint ."
+  },
+  "dependencies": {
+    "ethers": "6.13.4",
+    "passport-custom": "1.1.1"
+  },
+  "peerDependencies": {
+    "passport": "0.6 || 0.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unlock-protocol/unlock.git",
+    "directory": "packages/unlock-express"
+  },
+  "devDependencies": {
+    "@unlock-protocol/eslint-config": "workspace:./packages/eslint-config",
+    "prettier": "3.4.2"
+  }
+}

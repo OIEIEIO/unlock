@@ -1,5 +1,4 @@
-pragma solidity 0.5.14;
-
+pragma solidity 0.8.21;
 
 /**
  * This is an empty contract to be used in tests to see what happens
@@ -7,5 +6,7 @@ pragma solidity 0.5.14;
  *
  * This contract should not be used in production.
  */
-contract TestNoop
-{}
+// solium-disable-next-line no-empty-blocks
+contract TestNoop {
+
+}

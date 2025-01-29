@@ -1,4 +1,5 @@
-![Unlock](https://raw.githubusercontent.com/unlock-protocol/unlock/master/unlock-app/src/static/images/unlock-word-mark.png)
+![Unlock](/unlock-protocol-com/public/images/unlock-word-mark-dark.png#gh-dark-mode-only)
+![Unlock](/unlock-protocol-com/public/images/unlock-word-mark.png#gh-light-mode-only)
 
 ---
 
@@ -8,86 +9,123 @@ This repository includes all the code deployed by Unlock, including smart contra
 
 Read more about [why we're building Unlock](https://medium.com/unlock-protocol/its-time-to-unlock-the-web-b98e9b94add1).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Build Status](https://circleci.com/gh/unlock-protocol/unlock.svg?style=svg)](https://circleci.com/gh/unlock-protocol/unlock)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Demo
 
 [You can try Unlock using the Ethereum blockchain on our homepage.](https://unlock-protocol.com/)
 
 We are building this in the open, which means you can also run the code locally (see instructions below).
-You can try out the staging version - which runs the latest, in-progress code, but against the Rinkeby test network - at [https://staging.unlock-protocol.com](https://staging.unlock-protocol.com).
-
-Finally, you can learn more [on our documentation wiki](https://github.com/unlock-protocol/unlock/wiki).
+You can try out the staging version - which runs the latest, in-progress code, but against the Goerli test network.
 
 ## Contributing
 
 Thanks for your interest in contributing to Unlock! We're excited you're here. There are a variety of ways to contribute to the project.
-Please read more about contributing in our [contributor guide](https://github.com/unlock-protocol/unlock/blob/master/CONTRIBUTING.md). Please also check our [code of conduct](https://github.com/unlock-protocol/unlock/blob/master/CODE_OF_CONDUCT.md) for all participants in our community.
+Please read more about contributing in our [contributor guide](https://github.com/unlock-protocol/unlock/wiki/Getting-Started). Please also check our [code of conduct](https://github.com/unlock-protocol/unlock/blob/master/CODE_OF_CONDUCT.md) for all participants in our community.
 
 ## Getting started
 
-We use [docker](https://docker.com/) to run a set or containers which provide the required infrastructure.
+### The code
 
-1. Check out the code from this repository
-
-Unlock uses a mono repo which includes all the services and applications we develop.
+Unlock uses a monorepo which includes all the services and applications we develop.
 
 ```
+
+# get the code
 git clone https://github.com/unlock-protocol/unlock
 cd unlock
 ```
 
-2. Install all dependencies
-
-This will install all dependencies required for all the Unlock components (smart contracts and react app).
+You'll need [yarn](https://yarnpkg.com) installed globally.
 
 ```
-npm ci
+yarn
+# install all dependencies (...may take a while)
 ```
 
-3. Set up your environment variables
-
-At the root of the repo, add a file called `.env.dev.local` which includes the following variables and add your wallet address to the first line:
+Build all packages:
 
 ```
-ETHEREUM_ADDRESS=<your ethereum address>
-READ_ONLY_PROVIDER=http://localhost:8545
-LOCKSMITH_URI=http://localhost:8080
-WEDLOCKS_URI=http://localhost:1337
-DASHBOARD_URL=http://localhost:3000
-PAYWALL_URL=http://localhost:3001
-PAYWALL_SCRIPT_URL=http://localhost:3001/static/paywall.min.js
-UNLOCK_STATIC_URL=http://localhost:3002
-UNLOCK_TICKETS_URL=http://0.0.0.0:3003
-ERC20_CONTRACT_SYMBOL=DAI
-ERC20_CONTRACT_ADDRESS=0xFcD4FD1B4F3d5ceDdc19004579A5d7039295DBB9
-BOOTSTRAP_AMOUNT=15.0
-HTTP_PROVIDER_HOST=127.0.0.1
-HTTP_PROVIDER_PORT=8545
-LOCKSMITH_PURCHASER_ADDRESS=0xe29ec42f0b620b1c9a716f79a02e9dc5a5f5f98a
+yarn build
 ```
 
-Make sure you change the value of `ETHEREUM_ADDRESS` to use your main Ethereum address (the one you use with your Metamask for example).
-This will let you interract with the application using your regular setup.
-
-4. Run the docker cluster.
-
-Once [docker has been installed](https://docs.docker.com/install/) on your machine, start the cluster:
+To execute commands inside the repo, we use the pattern `yarn workspace <workspace name> <command>`
 
 ```
-$ cd docker && docker-compose up --build
+# build the contracts
+yarn workspace @unlock-protocol/smart-contracts build
+
+# validate lint for paywall
+yarn workspace @unlock-protocol/paywall lint
+
+# etc.
 ```
 
-This cluster includes all the required "infrastructure" to run our apps locally (mostly ganache, which is an ethereum dev node.)
-When starting this script does several things: deploys the unlock smart contract, transfers eth to your address, ... etc
+### The protocol
 
-5. Run the app
-
-This applies to any of our applications, but we'll take `unlock-app` as an example as it is our "main" dashboard:
+You can run a local version of the protocol using [Docker](https://docs.docker.com/install/).
 
 ```
-cd unlock-app && npm run dev
+cd docker && docker compose up --build
 ```
+
+This will create the required infrastructure (database, local ethereum test network, subgraph...) and start core services such as the [Locksmith](./locksmith) API and a [Wedlocks](./wedlocks) mailing service for debug purposes.
+
+NB: config is defined in both `docker-compose.yml` and `docker-compose.override.yml`.
+
+### Deploy and provision the contracts
+
+The following script will deploy the contracts, create some dummy locks and send you some local tokens for development.
+
+```
+cd docker
+docker compose exec eth-node yarn provision
+```
+
+### Run one of the apps
+
+The main dashboard lives in the `unlock-app` folder of this repo.
+
+To launch it locally:
+
+```
+# install deps
+yarn
+
+# start Unlock main app
+yarn workspace @unlock-protocol/unlock-app start
+```
+
+This will start
+
+- `http://localhost:3000` to start using the application and deploy locks locally.
+- `http://localhost:3002` our static landing page site.
+
+## Secrets
+
+Secrets are stored in the Unlock Labs 1Password account in the `API & Services` Vault. They can be loaded in our Github Actions through the use of dedicated actions.
+
+Here is an example:
+
+```yaml
+steps:
+  - name: Load secrets from 1Password
+    uses: 1Password/load-secrets-action@v1.2.0
+    with:
+      export-env: true
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      USERNAME: op://secrets/test-api/username
+      CREDENTIAL: op://secrets/test-api/credential
+  ... more steps that require USERNAME and CREDENTIAL to be set
+```
+
+These reference URIs have the following syntax:
+`op://<vault>/<item>[/<section>]/<field>`
+So for example, the reference URI op://app-cicd/aws/secret-access-key would be interpreted as:
+Vault: app-cicd
+Item: aws
+Field: secret-access-key
 
 ## Thank you
 
@@ -98,4 +136,4 @@ Thanks to [BrowserStack](https://www.browserstack.com/) for providing the infras
 Thank you to all the Members of our lock as well!
 You can easily join this list by clicking on the ❤️ Sponsor button (it's free!) at the top of this page too.
 
-![Members](https://member-wall.julien51.now.sh/api/members?locks=0xB0114bbDCe17e0AF91b2Be32916a1e236cf6034F&maxWidth=1000)
+![Members](https://member-wall.unlock-protocol.com/api/members?network=137&locks=0xb77030a7e47a5eb942a4748000125e70be598632&maxHeight=300)

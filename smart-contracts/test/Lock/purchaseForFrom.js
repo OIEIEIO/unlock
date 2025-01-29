@@ -1,60 +1,77 @@
-const Units = require('ethereumjs-units')
+const assert = require('assert')
+const { deployLock, ADDRESS_ZERO } = require('../helpers')
+const { ethers } = require('hardhat')
+const { getEvent } = require('@unlock-protocol/hardhat-helpers')
 
-const deployLocks = require('../helpers/deployLocks')
-const shouldFail = require('../helpers/shouldFail')
-
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../helpers/proxy')
-
-let unlock, locks
-
-contract('Lock / purchaseForFrom', accounts => {
+describe('Lock / purchaseForFrom', () => {
+  let lock
+  let lockFree
+  let keyOwner, referrer
   before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, accounts[0])
+    ;[, keyOwner, referrer] = await ethers.getSigners()
+    lock = await deployLock()
+    lockFree = await deployLock({ name: 'FREE' })
   })
 
   describe('if the referrer does not have a key', () => {
-    it.skip('should fail', async () => {
-      // TODO this now falls back to no referral, but allow the purchase
-      const lock = locks['FIRST']
-      await shouldFail(
-        lock.purchase(0, accounts[0], accounts[1], []),
-        'KEY_NOT_VALID'
-      )
-      // Making sure we do not have a key set!
-      await shouldFail(
-        lock.keyExpirationTimestampFor.call(accounts[0]),
-        'HAS_NEVER_OWNED_KEY'
+    it('should succeed', async () => {
+      await lock.purchase(
+        [],
+        [await keyOwner.getAddress()],
+        [await referrer.getAddress()],
+        [ADDRESS_ZERO],
+        ['0x'],
+        {
+          value: ethers.parseUnits('0.01', 'ether'),
+        }
       )
     })
   })
 
   describe('if the referrer has a key', () => {
-    it('should succeed', () => {
-      const lock = locks['FIRST']
-      return lock
-        .purchase(0, accounts[0], web3.utils.padLeft(0, 40), [], {
-          value: Units.convert('0.01', 'eth', 'wei'),
-        })
-        .then(() => {
-          return lock.purchase(0, accounts[1], accounts[0], [], {
-            value: Units.convert('0.01', 'eth', 'wei'),
-          })
-        })
+    it('should succeed', async () => {
+      await lock.purchase(
+        [],
+        [await keyOwner.getAddress()],
+        [ADDRESS_ZERO],
+        [ADDRESS_ZERO],
+        ['0x'],
+        {
+          value: ethers.parseUnits('0.01', 'ether'),
+        }
+      )
+      await lock.purchase(
+        [],
+        [await referrer.getAddress()],
+        [await keyOwner.getAddress()],
+        [ADDRESS_ZERO],
+        ['0x'],
+        {
+          value: ethers.parseUnits('0.01', 'ether'),
+        }
+      )
     })
 
     it('can purchaseForFrom a free key', async () => {
-      await locks['FREE'].purchase(
-        0,
-        accounts[0],
-        web3.utils.padLeft(0, 40),
-        []
+      await lockFree.purchase(
+        [],
+        [await keyOwner.getAddress()],
+        [ADDRESS_ZERO],
+        [ADDRESS_ZERO],
+        ['0x']
       )
-      const tx = await locks['FREE'].purchase(0, accounts[2], accounts[0], [])
-      assert.equal(tx.logs[0].event, 'Transfer')
-      assert.equal(tx.logs[0].args.from, 0)
-      assert.equal(tx.logs[0].args.to, accounts[2])
+      const tx = await lockFree.purchase(
+        [],
+        [await keyOwner.getAddress()],
+        [await referrer.getAddress()],
+        [ADDRESS_ZERO],
+        ['0x']
+      )
+
+      const receipt = await tx.wait()
+      const { args } = await getEvent(receipt, 'Transfer')
+      assert.equal(args.from, 0)
+      assert.equal(args.to, await keyOwner.getAddress())
     })
   })
 })

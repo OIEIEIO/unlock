@@ -1,55 +1,36 @@
-import { Web3Service } from '@unlock-protocol/unlock-js'
-import { ItemizedKeyPrice } from '../types' // eslint-disable-line no-unused-vars, import/no-unresolved
+import networks from '@unlock-protocol/networks'
+import { GAS_COST_TO_GRANT } from './constants'
+import { getProviderForNetwork, getPurchaser } from '../fulfillment/dispatcher'
+import GasPrice from './gasPrice'
 
-// Stripe's fee is 30 cents plus 2.9% of the transaction.
-const baseStripeFee = 30
-const stripePercentage = 0.029
-
+// @deprecated - Remove once no longer used anywhere. Use functions in pricing.ts instead.
 export default class KeyPricer {
-  readOnlyEthereumService: any
-
-  constructor(providerURL: string, unlockContractAddress: string) {
-    this.readOnlyEthereumService = new Web3Service({
-      readOnlyProvider: providerURL,
-      unlockAddress: unlockContractAddress,
-      blockTime: 0,
-      requiredConfirmations: 0,
-    })
-  }
-
-  async keyPrice(lockAddress: string): Promise<number> {
-    let lock = await this.readOnlyEthereumService.getLock(lockAddress)
-    return Math.round(Number(lock.keyPrice) * 100)
-  }
-
-  // Fee denominated in cents
-  gasFee(): number {
-    // For the time being gas fees are covered by the unlockServiceFee
-    return 0
-  }
-
-  // Fee denominated in cents
-  creditCardProcessingFee(keyPrice: number): number {
-    const subtotal = keyPrice + this.gasFee() + this.unlockServiceFee()
-
-    // This is rounded up to an integer number of cents.
-    const percentageFee = Math.ceil(subtotal * stripePercentage)
-
-    return baseStripeFee + percentageFee
-  }
-
-  // Fee denominated in cents
-  unlockServiceFee(): number {
-    return 50
-  }
-
-  async generate(lockAddress: string): Promise<ItemizedKeyPrice> {
-    const keyPrice = await this.keyPrice(lockAddress)
-    return {
-      keyPrice,
-      gasFee: this.gasFee(),
-      creditCardProcessing: this.creditCardProcessingFee(keyPrice),
-      unlockServiceFee: this.unlockServiceFee(),
+  async canAffordGrant(
+    network: number
+  ): Promise<{ canAfford: boolean; reason?: string }> {
+    if (!networks[network].maxFreeClaimCost) {
+      return { canAfford: false, reason: 'No free claim on this network' }
     }
+    if (networks[network].fullySubsidizedGas) {
+      return { canAfford: true }
+    }
+    const [gasCost, balance] = await Promise.all([
+      new GasPrice().gasPriceUSD(network, GAS_COST_TO_GRANT),
+      (await getProviderForNetwork(network)).getBalance(
+        await (await getPurchaser({ network })).getAddress()
+      ),
+    ])
+    // Balance is too low to afford the gas cost
+    if (balance < gasCost) {
+      return { canAfford: false, reason: 'Insufficient purchaser balance' }
+    }
+
+    if (gasCost > networks[network].maxFreeClaimCost!) {
+      return {
+        canAfford: false,
+        reason: `Gas costs too high: $${gasCost / 100}`,
+      }
+    }
+    return { canAfford: true }
   }
 }

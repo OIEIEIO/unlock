@@ -1,38 +1,53 @@
+import { ethers } from 'ethers'
 import request from 'supertest'
-import sigUtil from 'eth-sig-util'
+import app from '../app'
+import { vi } from 'vitest'
+import { Buffer } from 'buffer'
 
-const ethJsUtil = require('ethereumjs-util')
-const app = require('../../src/app')
-const Base64 = require('../../src/utils/base64')
-const models = require('../../src/models')
+vi.mock('../../src/payment/paymentProcessor', () => {
+  const mockedPaymentProcessor = vi.fn().mockImplementation(() => {
+    const paymentProcessor = {
+      chargeUser: vi.fn().mockResolvedValue('true'),
+      initiatePurchase: vi.fn().mockResolvedValue('this is a transaction hash'),
+      initiatePurchaseForConnectedStripeAccount: vi.fn().mockResolvedValue(''),
+    }
+    return paymentProcessor
+  })
+  return {
+    default: mockedPaymentProcessor,
+  }
+})
 
-let AuthorizedLock = models.AuthorizedLock
-let participatingLock = '0x5Cd3FC283c42B4d5083dbA4a6bE5ac58fC0f0267'
-let nonParticipatingLock = '0xF4906CE8a8E861339F75611c129b9679EDAe7bBD'
-let recipient = '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2'
+vi.mock('../../src/utils/keyPricer', () => {
+  const mockedKeyPricer = vi.fn().mockImplementation(() => {
+    const item = {
+      keyPriceUSD: vi
+        .fn()
+        .mockReturnValueOnce(250)
+        .mockReturnValueOnce(1000000),
+    }
+    return item
+  })
+  return {
+    default: mockedKeyPricer,
+  }
+})
 
-let privateKey = ethJsUtil.toBuffer(
+const participatingLock = '0x5Cd3FC283c42B4d5083dbA4a6bE5ac58fC0f0267'
+const recipient = '0xAaAdEED4c0B861cB36f4cE006a9C90BA2E43fdc2'
+
+const wallet = new ethers.Wallet(
   '0xfd8abdd241b9e7679e3ef88f05b31545816d6fbcaf11e86ebd5a57ba281ce229'
 )
-let mockPaymentProcessor = {
-  chargeUser: jest.fn().mockResolvedValue('true'),
-  initiatePurchase: jest.fn().mockResolvedValue('this is a transaction hash'),
-}
 
-function generateTypedData(message: any) {
+function generateTypedData(message: any, messageKey: string) {
   return {
     types: {
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-        { name: 'salt', type: 'bytes32' },
-      ],
       PurchaseRequest: [
         { name: 'recipient', type: 'address' },
         { name: 'lock', type: 'address' },
         { name: 'expiry', type: 'uint64' },
+        { name: 'USDAmount', type: 'uint64' },
       ],
     },
     domain: {
@@ -40,114 +55,42 @@ function generateTypedData(message: any) {
       version: '1',
     },
     primaryType: 'PurchaseRequest',
-    message: message,
+    message,
+    messageKey,
   }
 }
 
-jest.mock('../../src/payment/paymentProcessor', () => {
-  return jest.fn().mockImplementation(() => {
-    return mockPaymentProcessor
-  })
-})
-
 describe('Purchase Controller', () => {
-  beforeAll(async () => {
-    await AuthorizedLock.create({
-      address: participatingLock,
-    })
-  })
-
-  afterAll(async () => {
-    await AuthorizedLock.truncate()
-  })
-
-  describe('purchase initiation', () => {
-    describe("when the purchase hasn't been signed correctly", () => {
-      it('returns a 401 status code', async () => {
-        expect.assertions(1)
-        let response = await request(app).post('/purchase')
-        expect(response.status).toBe(401)
-      })
-    })
-
+  describe('purchase in USD initiation', () => {
     describe('when the purchase request is appropriately signed and user has payment details', () => {
-      let message = {
+      const message = {
         purchaseRequest: {
-          recipient: recipient,
+          recipient,
           lock: participatingLock,
           expiry: 16733658026,
+          USDAmount: 250,
         },
       }
 
-      let typedData = generateTypedData(message)
+      const typedData = generateTypedData(message, 'purchaseRequest')
 
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
+      it('responds with a 200 status code', async () => {
+        expect.assertions(1)
 
-      it('responds with a 200 and transaction hash', async () => {
-        expect.assertions(3)
+        const { domain, types } = typedData
+        const sig = await wallet.signTypedData(
+          domain,
+          types,
+          message.purchaseRequest
+        )
 
-        let response = await request(app)
-          .post('/purchase')
+        const response = await request(app)
+          .post('/purchase/USD')
           .set('Accept', 'json')
-          .set('Authorization', `Bearer ${Base64.encode(sig)}`)
+          .set('Authorization', `Bearer ${Buffer.from(sig).toString('base64')}`)
           .send(typedData)
 
         expect(response.status).toBe(200)
-        expect(response.body).toEqual({
-          transactionHash: 'this is a transaction hash',
-        })
-        expect(mockPaymentProcessor.initiatePurchase).toHaveBeenCalled()
-      })
-    })
-
-    describe('when the purchase request is past its expiry window', () => {
-      let message = {
-        purchaseRequest: {
-          recipient: recipient,
-          lock: participatingLock,
-          expiry: 702764221,
-        },
-      }
-
-      let typedData = generateTypedData(message)
-
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
-      it('responds with a 412', async () => {
-        expect.assertions(1)
-        let response = await request(app)
-          .post('/purchase')
-          .set('Accept', 'json')
-          .set('Authorization', `Bearer ${Base64.encode(sig)}`)
-          .send(typedData)
-        expect(response.status).toBe(412)
-      })
-    })
-
-    describe('when the Lock has not been authorized for participation in the purchasing program', () => {
-      let message = {
-        purchaseRequest: {
-          recipient: recipient,
-          lock: nonParticipatingLock,
-          expiry: 16733658026,
-        },
-      }
-
-      let typedData = generateTypedData(message)
-      const sig = sigUtil.signTypedData(privateKey, {
-        data: typedData,
-      })
-      it('rejects the purchase', async () => {
-        expect.assertions(1)
-        let response = await request(app)
-          .post('/purchase')
-          .set('Accept', 'json')
-          .set('Authorization', `Bearer ${Base64.encode(sig)}`)
-          .send(typedData)
-        expect(response.status).toBe(451)
       })
     })
   })

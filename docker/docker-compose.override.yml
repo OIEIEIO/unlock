@@ -1,59 +1,118 @@
-version: '3'
+version: '3.4'
 services:
-  ganache:
+  eth-node:
     restart: always
     build:
-      context: ./development
-      dockerfile: ganache.dockerfile
-    env_file: ../.env.dev.local
+      context: ./development/eth-node
+    command: ['sh', '-c', 'yarn start --hostname 0.0.0.0']
     ports:
       - 8545:8545
-  jaeger:
-    restart: always
-    image: jaegertracing/all-in-one:1.16
-    ports:
-      - '5775:5775/udp'
-      - '6831:6831/udp'
-      - '6832:6832/udp'
-      - '5778:5778'
-      - '16686:16686'
-      - '14268:14268'
-      - '9411:9411'
+
   postgres:
     command: ['postgres', '-cshared_preload_libraries=pg_stat_statements']
     env_file: development.env
-  locksmith-migration:
-    env_file: development.env
-    build:
-      context: ../locksmith/
-      dockerfile: Dockerfile
-    command: npm run db:migrate
-    depends_on:
-      - postgres
+    ports:
+      - '5432:5432'
+
   locksmith:
     env_file: development.env
+    image: locksmith
     build:
-      context: ../locksmith/
-      dockerfile: Dockerfile
+      context: ../
+      target: dev
+      args:
+        BUILD_DIR: locksmith
+      cache_from:
+        - unlockprotocol/unlock-dev
+    command:
+      [
+        '/opt/wait-for-it.sh',
+        '-t',
+        '0',
+        'postgres:5432',
+        '--',
+        'yarn',
+        'workspace',
+        '@unlock-protocol/locksmith',
+        'dev',
+      ]
     ports:
       - '8080:8080'
+    volumes:
+      - ./development/wait-for-it/wait-for-it.sh:/opt/wait-for-it.sh
     depends_on:
       - postgres
-  subgraph_deployment:
+      - eth-node
+
+  locksmith-websub:
+    env_file: development.env
+    image: locksmith-websub
     build:
-      context: ./development
-      dockerfile: subgraph.dockerfile
-    command: ['node', './deploy-subgraph.js']
+      context: ../
+      target: dev
+      cache_from:
+        - unlockprotocol/unlock-dev
+    command:
+      [
+        '/opt/wait-for-it.sh',
+        '-t',
+        '0',
+        'postgres:5432',
+        '--',
+        'yarn',
+        'workspace',
+        '@unlock-protocol/locksmith',
+        'websub:dev',
+      ]
+    volumes:
+      - ./development/wait-for-it/wait-for-it.sh:/opt/wait-for-it.sh
+    depends_on:
+      - postgres
+      - eth-node
+
+  # deploy the unlock graph on graph-node, then stop after execution
+  subgraph:
+    build:
+      context: ../
+      target: dev
+      cache_from:
+        - unlockprotocol/unlock-dev
+      args:
+        BUILD_DIR: subgraph
+    env_file: development.env
+    command:
+      [
+        '/opt/wait-for-it.sh',
+        '-t',
+        '0',
+        'graph-node:8020',
+        '--',
+        'sh',
+        '/opt/startup.sh',
+      ]
+    volumes:
+      - ./development/subgraph/startup.sh:/opt/startup.sh
+      - ./development/wait-for-it/wait-for-it.sh:/opt/wait-for-it.sh
     depends_on:
       - graph-node
+
   wedlocks:
-    image: unlockprotocol/wedlocks
-    command: npm run dev
+    image: wedlocks
+    build:
+      target: dev
+      cache_from:
+        - unlockprotocol/unlock-dev
+      context: ../
+    command: ['yarn', 'workspace', '@unlock-protocol/wedlocks', 'dev']
     env_file: development.env
     ports:
       - '1337:1337'
+
   graph-node:
     env_file: development.env
+    ports:
+      - '8030:8030'
+      - '8040:8040'
     depends_on:
       - ipfs
       - postgres

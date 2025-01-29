@@ -1,72 +1,84 @@
-const deployLocks = require('../../helpers/deployLocks')
-const shouldFail = require('../../helpers/shouldFail')
+const assert = require('assert')
+const { ethers } = require('hardhat')
+const { getEvent } = require('@unlock-protocol/hardhat-helpers')
 
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../../helpers/proxy')
+const { reverts, deployLock, deployContracts } = require('../../helpers')
+const metadata = require('../../fixtures/metadata')
 
-let unlock, lock, txObj, event
+let lock
+let unlock
+let lockManager, someAccount
 
-contract('Lock / erc721 / tokenSymbol', accounts => {
+describe('Lock / erc721 / tokenSymbol', () => {
   before(async () => {
-    unlock = await getProxy(unlockContract)
-
-    const locks = await deployLocks(unlock, accounts[0])
-    lock = locks['FIRST']
+    ;[lockManager, someAccount] = await ethers.getSigners()
+    ;({ unlock } = await deployContracts())
+    lock = await deployLock({ unlock })
   })
 
   describe('the global token symbol stored in Unlock', () => {
     it('should return the global token symbol', async () => {
-      assert.equal(await unlock.globalTokenSymbol.call(), '')
+      assert.equal(await unlock.globalTokenSymbol(), '')
     })
 
-    it('should allow the owner to set the global token Symbol', async () => {
-      txObj = await unlock.configUnlock(
-        await unlock.publicLockAddress(),
-        'KEY',
-        await unlock.globalBaseTokenURI(),
-        {
-          from: accounts[0],
-        }
-      )
-      event = txObj.logs[0]
-      assert.equal(await unlock.globalTokenSymbol.call(), 'KEY')
+    describe('set the global symbol', () => {
+      beforeEach(async () => {
+        await unlock.connect(lockManager).configUnlock(
+          await unlock.governanceToken(),
+          await unlock.weth(),
+          0,
+          'KEY',
+          await unlock.globalBaseTokenURI(),
+          1 // mainnet
+        )
+      })
+
+      it('should allow the owner to set the global token Symbol', async () => {
+        assert.equal(await unlock.globalTokenSymbol(), 'KEY')
+      })
+
+      it('getGlobalTokenSymbol is the same', async () => {
+        assert.equal(
+          await unlock.globalTokenSymbol(),
+          await unlock.getGlobalTokenSymbol()
+        )
+      })
     })
 
     it('should fail if someone other than the owner tries to set the symbol', async () => {
-      await shouldFail(
-        unlock.configUnlock(
-          await unlock.publicLockAddress(),
+      await reverts(
+        unlock.connect(someAccount).configUnlock(
+          await unlock.governanceToken(),
+          await unlock.weth(),
+          0,
           'BTC',
           await unlock.globalBaseTokenURI(),
-          {
-            from: accounts[1],
-          }
+          1 // mainnet
         )
       )
-    })
-
-    it('should emit the ConfigUnlock event', async () => {
-      assert.equal(event.event, 'ConfigUnlock')
     })
   })
 
   describe('A custom token symbol stored in the lock', () => {
     it('should allow the lock owner to set a custom token symbol', async () => {
-      txObj = await lock.updateLockSymbol('MYTKN', { from: accounts[0] })
-      event = txObj.logs[0]
-      assert.equal(await lock.symbol.call(), 'MYTKN')
+      await lock
+        .connect(lockManager)
+        .setLockMetadata(...Object.values(metadata))
+      assert.equal(await lock.symbol(), metadata.symbol)
+    })
+
+    it('should emit the NewLockConfig event', async () => {
+      const tx = await lock.setLockMetadata(...Object.values(metadata))
+      const receipt = await tx.wait()
+      const event = await getEvent(receipt, 'LockMetadata')
+      assert.equal(event.args.symbol, metadata.symbol)
     })
 
     it('should fail if someone other than the owner tries to set the symbol', async () => {
-      await shouldFail(
-        lock.updateLockSymbol('BTC', {
-          from: accounts[1],
-        })
+      await reverts(
+        lock.connect(someAccount).setLockMetadata(...Object.values(metadata)),
+        'ONLY_LOCK_MANAGER'
       )
-    })
-
-    it('should emit the NewLockSymbol event', async () => {
-      assert.equal(event.event, 'NewLockSymbol')
     })
   })
 })

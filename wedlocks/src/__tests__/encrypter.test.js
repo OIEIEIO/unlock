@@ -1,21 +1,32 @@
+import { it, beforeEach, describe, expect } from 'vitest'
+
 import forge from 'node-forge'
 import { signParam } from '../encrypter'
 
-let privateKey, publicKey
+const createKeyPair = async () => {
+  return new Promise((resolve) => {
+    forge.rsa.generateKeyPair(
+      { bits: 2048, workers: 2 },
+      function (err, keypair) {
+        if (err) {
+          throw err
+        }
 
-// These tests are slow because we generate private keys
-jest.setTimeout(15000)
+        const privateKey = forge.pki.privateKeyToPem(keypair.privateKey)
+        const publicKey = forge.pki.publicKeyToPem(keypair.publicKey)
+        resolve({ privateKey, publicKey })
+      }
+    )
+  })
+}
 
 describe('encrypter', () => {
-  beforeEach(done => {
-    forge.rsa.generateKeyPair({ bits: 2048, workers: 2 }, function(
-      err,
-      keypair
-    ) {
-      privateKey = forge.pki.privateKeyToPem(keypair.privateKey)
-      publicKey = forge.pki.publicKeyToPem(keypair.publicKey)
-      done()
-    })
+  let privateKey
+  let publicKey
+  beforeEach(async () => {
+    const keypair = await createKeyPair()
+    privateKey = keypair.privateKey
+    publicKey = keypair.publicKey
   })
 
   describe('signParam', () => {

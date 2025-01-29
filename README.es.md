@@ -1,4 +1,4 @@
-![Unlock](https://raw.githubusercontent.com/unlock-protocol/unlock/master/unlock-branding/src/unlock-logo.svg?sanitize=true)
+![Unlock](/unlock-app/public/images/unlock-word-mark.png)
 
 ---
 
@@ -39,6 +39,6 @@ El código para la aplicación React, que interactúa con los contratos intelige
 Despliegue con docker/docker-compose:
 
 ```
-docker-compose -f docker/docker-compose.ci.yml build
-docker-compose -f docker/docker-compose.ci.yml up --abort-on-container-exit
+docker compose -f docker/docker-compose.ci.yml build
+docker compose -f docker/docker-compose.ci.yml up --abort-on-container-exit
 ```

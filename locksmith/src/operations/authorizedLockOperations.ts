@@ -1,25 +1,23 @@
-import * as Normalizer from '../utils/normalizer'
+import { getSignerWhoIsKeyGranterOnLock } from '../fulfillment/dispatcher'
 
-const models = require('../models')
+export const hasAuthorization = async (
+  address: string,
+  network: number
+): Promise<boolean> => {
+  const wallet = await getSignerWhoIsKeyGranterOnLock({
+    lockAddress: address,
+    network,
+  })
 
-const { AuthorizedLock } = models
-import Sequelize = require('sequelize')
-
-const Op = Sequelize.Op
-
-namespace AuthorizedLockOperations {
-  // eslint-disable-next-line import/prefer-default-export
-  export const hasAuthorization = async (address: string): Promise<boolean> => {
-    let authorizedLockCount = await AuthorizedLock.count({
-      where: {
-        address: {
-          [Op.eq]: Normalizer.ethereumAddress(address),
-        },
-      },
-    })
-
-    return authorizedLockCount > 0
+  if (!wallet) {
+    return false
   }
+
+  return true
 }
 
-export = AuthorizedLockOperations
+const AuthorizedLockOperations = {
+  hasAuthorization,
+}
+
+export default AuthorizedLockOperations

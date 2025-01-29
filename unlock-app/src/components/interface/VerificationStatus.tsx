@@ -1,157 +1,259 @@
-import React from 'react'
-import sigUtil from 'eth-sig-util'
-import { useQuery } from '@apollo/react-hooks'
-import { ApolloError } from 'apollo-boost'
-import { DefaultError } from '../creator/FatalError'
+import { useState } from 'react'
 import {
-  durationsAsTextFromSeconds,
-  expirationAsDate,
-} from '../../utils/durations'
-import { OwnedKey } from './keychain/KeychainTypes'
-import keyHolderQuery from '../../queries/keyHolder'
-import 'cross-fetch/polyfill'
-import useGetMetadataFor from '../../hooks/useGetMetadataFor'
-
-interface VerificationData {
-  accountAddress: string
-  lockAddress: string
-  timestamp: number
-}
+  MembershipCard,
+  MembershipCardPlaceholder,
+} from './verification/MembershipCard'
+import { ToastHelper } from '../helpers/toast.helper'
+import { MembershipVerificationConfig } from '~/utils/verification'
+import { invalidMembership } from './verification/invalidMembership'
+import { Button, Modal } from '@unlock-protocol/ui'
+import { isSignatureValidForAddress } from '~/utils/signatures'
+import { locksmith } from '~/config/locksmith'
+import { AxiosError } from 'axios'
+import { useEventTicket, useLocksmithGranterAddress } from '~/hooks/useTicket'
+import { MAX_UINT } from '~/constants'
+import { config as AppConfig } from '~/config/app'
+import { useConnectModal } from '~/hooks/useConnectModal'
+import { Event, PaywallConfigType } from '@unlock-protocol/core'
+import { useAuthenticate } from '~/hooks/useAuthenticate'
 
 interface Props {
-  data?: VerificationData
-  sig?: string
-  hexData?: string
+  checkoutConfig?: PaywallConfigType
+  eventProp?: Event
+  config: MembershipVerificationConfig
+  onVerified: () => void
+  onClose?: () => void
 }
 
-export const VerificationStatus = ({ data, sig, hexData }: Props) => {
-  if (!data || !sig || !hexData) {
-    return (
-      <DefaultError
-        illustration="/static/images/illustrations/error.svg"
-        title="No Signature Data Found"
-        critical
-      >
-        We couldn&apos;t find a signature payload in the URL. Please check that
-        you scanned the correct QR code.
-      </DefaultError>
-    )
-  }
+interface WarningDialogProps {
+  isOpen: boolean
+  setIsOpen: (value: boolean) => void
+  onConfirm: () => void
+}
 
-  const { accountAddress, lockAddress, timestamp } = data
-
-  // We pass down the { loading, error } results from this hook
-  // to `OwnsKey`, which uses them to render loading and error states.
-  // TODO: craft a better query to let us directly ask about the single
-  // lock under consideration. This will remove the need to iterate over
-  // all the user's keys to determine if they own a key to this lock.
-  const queryResults = useQuery(keyHolderQuery(), {
-    variables: { address: accountAddress },
-  })
-
-  let matchingKey: OwnedKey | undefined
-
-  if (queryResults.data) {
-    matchingKey = queryResults.data.keyHolders[0].keys.find((key: OwnedKey) => {
-      return key.lock.address === lockAddress
-    })
-  }
-
-  const secondsElapsedFromSignature = Math.floor(
-    (Date.now() - timestamp) / 1000
-  )
-
-  const identityIsValid =
-    sigUtil.recoverPersonalSignature({
-      data: hexData,
-      sig,
-    }) === accountAddress.toLowerCase()
-
-  return (
-    <div>
-      {matchingKey && <h1>{matchingKey.lock.name}</h1>}
-      <Identity valid={identityIsValid} />
-
-      <OwnsKey
-        accountAddress={accountAddress}
-        loading={queryResults.loading}
-        error={queryResults.error}
-        matchingKey={matchingKey}
-      />
-
-      <p>
-        Signed {durationsAsTextFromSeconds(secondsElapsedFromSignature)} ago.
-      </p>
+const WarningDialog = ({
+  isOpen,
+  setIsOpen,
+  onConfirm,
+}: WarningDialogProps) => (
+  <Modal isOpen={isOpen} setIsOpen={setIsOpen} size="small">
+    <div className="w-full max-w-sm bg-white rounded-xl">
+      <div className="flex flex-col gap-3">
+        <div className="p-2 text-center bg-amber-300 rounded-t-xl">
+          <span className="text-lg">Warning</span>
+        </div>
+        <div className="flex flex-col w-full gap-3 p-4">
+          <span>
+            The current ticket has not been checked-in. Are you sure you want to
+            scan the next one?
+          </span>
+          <Button
+            onClick={(event) => {
+              event.preventDefault()
+              setIsOpen(false)
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outlined-primary"
+            onClick={(event) => {
+              event.preventDefault()
+              onConfirm()
+            }}
+          >
+            <div className="flex items-center">
+              <span>Ok, continue</span>
+            </div>
+          </Button>
+        </div>
+      </div>
     </div>
-  )
-}
-
-export const Identity = ({ valid }: { valid: boolean }) => (
-  <p>Identity is {valid ? 'valid' : 'INVALID'}.</p>
+  </Modal>
 )
 
 /**
- * Shows public of protected attributes
- * @param visibility
- * @param attributes
+ * React components which given data, signature will verify the validity of a key
+ * and display the right status
  */
-const metadataAttributes = (visibility: string, attributes: any) => {
-  if (!attributes) {
-    return
+export const VerificationStatus = ({
+  checkoutConfig,
+  eventProp,
+  config,
+  onVerified,
+}: Props) => {
+  const { data, sig, raw } = config
+  const { lockAddress, timestamp, network, tokenId, account } = data
+  const { account: viewer } = useAuthenticate()
+  const { openConnectModal } = useConnectModal()
+  const [isCheckingIn, setIsCheckingIn] = useState(false)
+  const [showWarning, setShowWarning] = useState(false)
+
+  const { isLoading: isKeyGranterLoading, data: keyGranter } =
+    useLocksmithGranterAddress()
+
+  const {
+    isLoading: isTicketLoading,
+    data: ticket,
+    refetch: refetchTicket,
+  } = useEventTicket({
+    lockAddress,
+    keyId: tokenId!,
+    network,
+    eventProp,
+  })
+
+  const onCheckIn = async () => {
+    try {
+      setIsCheckingIn(true)
+      if (eventProp) {
+        await locksmith.checkEventTicket(
+          eventProp.slug,
+          network,
+          lockAddress,
+          tokenId!
+        )
+      } else {
+        await locksmith.checkTicket(network, lockAddress, tokenId!)
+      }
+      await refetchTicket()
+      setIsCheckingIn(false)
+      setShowWarning(false)
+    } catch (error) {
+      console.error(error)
+      if (error instanceof AxiosError) {
+        if (error.response?.status === 409) {
+          ToastHelper.error('Ticket already checked in')
+          return
+        }
+      }
+      ToastHelper.error('Failed to check in')
+    }
   }
-  return (
-    <>
-      <h3>{visibility}</h3>
-      <ul>
-        {Object.keys(attributes).map(name => {
-          return (
-            <li key={name}>
-              {name}: {attributes[name]}
-            </li>
-          )
-        })}
-      </ul>
-    </>
+
+  if (isTicketLoading || isKeyGranterLoading) {
+    return (
+      <div className="flex justify-center">
+        <MembershipCardPlaceholder />
+      </div>
+    )
+  }
+
+  const isSignatureValid = !!(
+    ticket &&
+    isSignatureValidForAddress(
+      sig,
+      raw,
+      account,
+      [...AppConfig.locksmithSigners, ticket!.owner, keyGranter!].filter(
+        (item) => !!item
+      )
+    )
   )
-}
 
-interface OwnsKeyProps {
-  loading: boolean
-  error: ApolloError | undefined
-  matchingKey?: OwnedKey
-  accountAddress: string
-}
-export const OwnsKey = ({
-  loading,
-  error,
-  matchingKey,
-  accountAddress,
-}: OwnsKeyProps) => {
-  if (loading) {
-    return <p>Checking if user has a valid key...</p>
-  } else if (error) {
-    return <p>Error: {error.message}</p>
+  const invalid = ticket
+    ? invalidMembership({
+        locks: checkoutConfig ? checkoutConfig?.locks : null,
+        network,
+        manager: ticket!.manager,
+        keyId: ticket!.keyId,
+        owner: ticket!.owner,
+        expiration:
+          ticket!.expiration === MAX_UINT ? -1 : parseInt(ticket!.expiration),
+        isSignatureValid,
+        verificationData: data,
+      })
+    : 'Invalid QR code'
+
+  const isTicketVerifiable =
+    Object.keys(checkoutConfig?.locks ?? {}).some(
+      (address) => address.toLowerCase() === ticket!.lockAddress.toLowerCase()
+    ) || !checkoutConfig
+
+  const checkedInAt = ticket?.checkedInAt
+
+  const disableActions = !ticket?.isVerifier || isCheckingIn || !!invalid
+
+  const onClickVerified = () => {
+    if (
+      !checkedInAt &&
+      ticket!.isVerifier &&
+      !showWarning &&
+      isTicketVerifiable
+    ) {
+      setShowWarning(true)
+    } else if (typeof onVerified === 'function') {
+      onVerified()
+    }
   }
 
-  if (!matchingKey) {
-    return <p>This user does not have a key to the lock.</p>
-  }
-
-  const metadata = useGetMetadataFor(matchingKey.lock.address, accountAddress)
-  const expiresIn = expirationAsDate(parseInt(matchingKey.expiration))
-
-  let validUntil = 'expired'
-  if (expiresIn !== 'Expired') {
-    validUntil = `valid until ${expiresIn}`
-  }
+  const CardActions = () => (
+    <div className="grid w-full gap-2">
+      {viewer ? (
+        isTicketVerifiable && ticket!.isVerifier ? (
+          <Button
+            loading={isCheckingIn}
+            disabled={disableActions}
+            variant={'primary'}
+            onClick={async (event) => {
+              event.preventDefault()
+              onCheckIn()
+            }}
+          >
+            {isCheckingIn ? 'Checking in' : 'Check in'}
+          </Button>
+        ) : null
+      ) : (
+        <Button
+          onClick={(event) => {
+            event.preventDefault()
+            openConnectModal()
+          }}
+          variant="primary"
+        >
+          Connect to check-in
+        </Button>
+      )}
+      <Button variant="outlined-primary" onClick={onClickVerified}>
+        Scan next ticket
+      </Button>
+    </div>
+  )
 
   return (
-    <div>
-      <p>
-        The user {accountAddress} owns a key, which is {validUntil}.
-      </p>
-      {metadataAttributes('Public', metadata.public)}
-      {metadataAttributes('Protected', metadata.protected)}
+    <div className="flex justify-center">
+      <WarningDialog
+        isOpen={showWarning}
+        setIsOpen={setShowWarning}
+        onConfirm={onClickVerified}
+      />
+      {ticket && (
+        <MembershipCard
+          image={ticket!.image}
+          keyId={tokenId!}
+          owner={ticket!.owner}
+          userMetadata={ticket!.userMetadata}
+          invalid={invalid}
+          timestamp={timestamp}
+          lockAddress={lockAddress}
+          name={ticket!.name}
+          network={network}
+          checkedInAt={checkedInAt}
+          showWarning={showWarning}
+        >
+          <CardActions />
+        </MembershipCard>
+      )}
+      {!ticket && (
+        <div className="flex flex-col center">
+          <p className="p-8 text-red-500 items-center text-center">
+            Invalid QR Code.
+          </p>
+          <Button variant="outlined-primary" onClick={onVerified}>
+            Scan next ticket
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,40 +1,34 @@
-pragma solidity 0.5.14;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-import './MixinDisableAndDestroy.sol';
-import './MixinApproval.sol';
-import './MixinKeys.sol';
-import './MixinFunds.sol';
-import './MixinLockCore.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/utils/Address.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC721/IERC721Receiver.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol';
+import "./MixinRoles.sol";
+import "./MixinDisable.sol";
+import "./MixinKeys.sol";
+import "./MixinFunds.sol";
+import "./MixinLockCore.sol";
+import "./MixinPurchase.sol";
+import "./MixinErrors.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721ReceiverUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 /**
  * @title Mixin for the transfer-related functions needed to meet the ERC721
  * standard.
- * @author Nick Furfaro
  * @dev `Mixins` are a design pattern seen in the 0x contracts.  It simply
  * separates logically groupings of code to ease readability.
  */
 
 contract MixinTransfer is
+  MixinErrors,
+  MixinRoles,
   MixinFunds,
   MixinLockCore,
   MixinKeys,
-  MixinApproval
+  MixinPurchase
 {
-  using SafeMath for uint;
-  using Address for address;
+  using AddressUpgradeable for address;
 
-  event TransferFeeChanged(
-    uint transferFeeBasisPoints
-  );
-
-  event TimestampChanged(
-    uint indexed _tokenId,
-    uint _amount,
-    bool _timeAdded
-  );
+  event TransferFeeChanged(uint transferFeeBasisPoints);
 
   // 0x150b7a02 == bytes4(keccak256('onERC721Received(address,address,uint256,bytes)'))
   bytes4 private constant _ERC721_RECEIVED = 0x150b7a02;
@@ -45,246 +39,288 @@ contract MixinTransfer is
   uint public transferFeeBasisPoints;
 
   /**
-  * @notice Allows the key owner to safely share their key (parent key) by
-  * transferring a portion of the remaining time to a new key (child key).
-  * @param _to The recipient of the shared key
-  * @param _tokenId the key to share
-  * @param _timeShared The amount of time shared
-  */
-  function shareKey(
-    address _to,
-    uint _tokenId,
-    uint _timeShared
-  ) public
-    onlyIfAlive
-    onlyKeyOwnerOrApproved(_tokenId)
-  {
-    require(transferFeeBasisPoints < BASIS_POINTS_DEN, 'KEY_TRANSFERS_DISABLED');
-    require(_to != address(0), 'INVALID_ADDRESS');
-    address keyOwner = _ownerOf[_tokenId];
-    require(getHasValidKey(keyOwner), 'KEY_NOT_VALID');
-    Key storage fromKey = keyByOwner[keyOwner];
-    Key storage toKey = keyByOwner[_to];
-    uint iDTo = toKey.tokenId;
+   * @dev helper to check if transfer have been disabled
+   */
+  function _transferNotDisabled() internal view {
+    if (
+      transferFeeBasisPoints >= BASIS_POINTS_DEN && !isLockManager(msg.sender)
+    ) {
+      revert KEY_TRANSFERS_DISABLED();
+    }
+  }
+
+  /**
+   * @notice Allows the key owner to safely transfer a portion of the remaining time
+   * from their key to a new key
+   * @param _tokenIdFrom the key to share
+   * @param _to The recipient of the shared time
+   * @param _timeShared The amount of time shared
+   */
+  function shareKey(address _to, uint _tokenIdFrom, uint _timeShared) public {
+    _lockIsUpToDate();
+    if (maxNumberOfKeys <= _totalSupply) {
+      revert LOCK_SOLD_OUT();
+    }
+    _onlyKeyManagerOrApproved(_tokenIdFrom);
+    _isValidKey(_tokenIdFrom);
+    _transferNotDisabled();
+
+    address keyOwner = _ownerOf[_tokenIdFrom];
+
+    // store time to be added
     uint time;
+
     // get the remaining time for the origin key
-    uint timeRemaining = fromKey.expirationTimestamp - block.timestamp;
+    uint timeRemaining = keyExpirationTimestampFor(_tokenIdFrom) -
+      block.timestamp;
+
     // get the transfer fee based on amount of time wanted share
-    uint fee = getTransferFee(keyOwner, _timeShared);
-    uint timePlusFee = _timeShared.add(fee);
+    uint fee = isLockManager(msg.sender)
+      ? 0
+      : getTransferFee(_tokenIdFrom, _timeShared);
+    uint timePlusFee = _timeShared + fee;
 
     // ensure that we don't try to share too much
-    if(timePlusFee < timeRemaining) {
+    if (timePlusFee < timeRemaining) {
       // now we can safely set the time
       time = _timeShared;
       // deduct time from parent key, including transfer fee
-      _timeMachine(_tokenId, timePlusFee, false);
+      _timeMachine(_tokenIdFrom, timePlusFee, false);
     } else {
       // we have to recalculate the fee here
-      fee = getTransferFee(keyOwner, timeRemaining);
+      fee = isLockManager(msg.sender)
+        ? 0
+        : getTransferFee(_tokenIdFrom, _timeShared);
       time = timeRemaining - fee;
-      fromKey.expirationTimestamp = block.timestamp; // Effectively expiring the key
-      emit ExpireKey(_tokenId);
+      _keys[_tokenIdFrom].expirationTimestamp = block.timestamp; // Effectively expiring the key
+      emit ExpireKey(_tokenIdFrom);
     }
 
-    if (toKey.tokenId == 0) {
-      _assignNewTokenId(toKey);
-      _recordOwner(_to, iDTo);
-      emit Transfer(
-        address(0), // This is a creation or time-sharing
-        _to,
-        iDTo
-      );
-    }
-    // add time to new key
-    _timeMachine(iDTo, time, true);
+    // create new key
+    uint tokenIdTo = _createNewKey(_to, address(0), block.timestamp + time);
+
     // trigger event
-    emit Transfer(
-      keyOwner,
-      _to,
-      iDTo
-    );
+    emit Transfer(keyOwner, _to, tokenIdTo);
 
-    require(_checkOnERC721Received(keyOwner, _to, _tokenId, ''), 'NON_COMPLIANT_ERC721_RECEIVER');
+    if (!_checkOnERC721Received(keyOwner, _to, tokenIdTo, "")) {
+      revert NON_COMPLIANT_ERC721_RECEIVER();
+    }
   }
 
+  /**
+   * an ERC721-like function to transfer a token from one account to another.
+   * @param _from the owner of token to transfer
+   * @param _recipient the address that will receive the token
+   * @param _tokenId the id of the token
+   * @dev Requirements: if the caller is not `from`, it must be approved to move this token by
+   * `approve`
+   * The key manager will be reset to address zero after the transfer
+   */
   function transferFrom(
     address _from,
     address _recipient,
     uint _tokenId
-  )
-    public
-    onlyIfAlive
-    hasValidKey(_from)
-    onlyKeyOwnerOrApproved(_tokenId)
-  {
-    require(transferFeeBasisPoints < BASIS_POINTS_DEN, 'KEY_TRANSFERS_DISABLED');
-    require(_recipient != address(0), 'INVALID_ADDRESS');
-    uint fee = getTransferFee(_from, 0);
+  ) public {
+    _onlyKeyManagerOrApproved(_tokenId);
 
-    Key storage fromKey = keyByOwner[_from];
-    Key storage toKey = keyByOwner[_recipient];
-    uint id = fromKey.tokenId;
+    // reset key manager to address zero
+    keyManagerOf[_tokenId] = address(0);
 
-    uint previousExpiration = toKey.expirationTimestamp;
+    _transferFrom(_from, _recipient, _tokenId);
+  }
+
+  /**
+   * Lending a key allows you to transfer the token while retaining the
+   * ownerships right by setting yourself as a key manager first.
+   * @param _from the owner of token to transfer
+   * @param _recipient the address that will receive the token
+   * @param _tokenId the id of the token
+   * @notice This function can only called by 1) the key owner when no key manager is set or 2) the key manager.
+   * After calling the function, the `_recipient` will be the new owner, and the sender of the tx
+   * will become the key manager.
+   */
+  function lendKey(address _from, address _recipient, uint _tokenId) public {
+    // make sure caller is either owner or key manager
+    if (!_isKeyManager(_tokenId, msg.sender)) {
+      revert UNAUTHORIZED();
+    }
+
+    // transfer key ownership to lender
+    _transferFrom(_from, _recipient, _tokenId);
+
+    // set key owner as key manager
+    keyManagerOf[_tokenId] = msg.sender;
+  }
+
+  /**
+   * Unlend is called when you have lent a key and want to claim its full ownership back.
+   * @param _recipient the address that will receive the token ownership
+   * @param _tokenId the id of the token
+   * @dev Only the key manager of the token can call this function
+   */
+  function unlendKey(address _recipient, uint _tokenId) public {
+    if (msg.sender != keyManagerOf[_tokenId]) {
+      revert UNAUTHORIZED();
+    }
+    _transferFrom(ownerOf(_tokenId), _recipient, _tokenId);
+  }
+
+  /**
+   * Deactivate an existing key
+   * @param _tokenId the id of token to burn
+   * @notice the key will be expired and ownership records will be destroyed
+   */
+  function burn(uint _tokenId) public {
+    _isKey(_tokenId);
+    _onlyKeyManagerOrApproved(_tokenId);
+
+    // burn token
+    _transferFrom(ownerOf(_tokenId), address(0), _tokenId);
+
+    // decrease totalSupply
+    _totalSupply--;
+
+    // increase burnt token counter
+    _burntTokens++;
+  }
+
+  /**
+   * This functions contains the logic to transfer a token
+   * from an account to another
+   */
+  function _transferFrom(
+    address _from,
+    address _recipient,
+    uint _tokenId
+  ) private {
+    _isValidKey(_tokenId);
+    _transferNotDisabled();
+
+    // incorrect _from field
+    if (ownerOf(_tokenId) != _from) {
+      revert UNAUTHORIZED();
+    }
+
+    if (_from == _recipient) {
+      revert TRANSFER_TO_SELF();
+    }
+
     // subtract the fee from the senders key before the transfer
-    _timeMachine(id, fee, false);
+    _timeMachine(
+      _tokenId,
+      isLockManager(msg.sender) ? 0 : getTransferFee(_tokenId, 0),
+      false
+    );
 
-    if (toKey.tokenId == 0) {
-      toKey.tokenId = fromKey.tokenId;
-      _recordOwner(_recipient, toKey.tokenId);
+    // transfer a token
+    Key storage key = _keys[_tokenId];
+
+    // update expiration
+    key.expirationTimestamp = keyExpirationTimestampFor(_tokenId);
+
+    // increase total number of unique owners (zero address is ignored)
+    if (totalKeys(_recipient) == 0 && _recipient != address(0)) {
+      numberOfOwners++;
     }
 
-    if (previousExpiration <= block.timestamp) {
-      // The recipient did not have a key, or had a key but it expired. The new expiration is the
-      // sender's key expiration
-      // an expired key is no longer a valid key, so the new tokenID is the sender's tokenID
-      toKey.expirationTimestamp = fromKey.expirationTimestamp;
-      toKey.tokenId = fromKey.tokenId;
-      _recordOwner(_recipient, _tokenId);
-    } else {
-      // The recipient has a non expired key. We just add them the corresponding remaining time
-      // SafeSub is not required since the if confirms `previousExpiration - block.timestamp` cannot underflow
-      toKey.expirationTimestamp = fromKey
-        .expirationTimestamp.add(previousExpiration - block.timestamp);
-    }
+    // delete token from previous owner
+    _deleteOwnershipRecord(_tokenId);
 
-    // Effectively expiring the key for the previous owner
-    fromKey.expirationTimestamp = block.timestamp;
+    // record new owner
+    _createOwnershipRecord(_tokenId, _recipient);
 
-    // Set the tokenID to 0 for the previous owner to avoid duplicates
-    fromKey.tokenId = 0;
-
-    // Clear any previous approvals
+    // clear any previous approvals
     _clearApproval(_tokenId);
 
+    // make future reccuring transactions impossible
+    _recordTokenTerms(_tokenId, 0, address(0));
+
     // trigger event
-    emit Transfer(
-      _from,
-      _recipient,
-      _tokenId
-    );
+    emit Transfer(_from, _recipient, _tokenId);
+
+    // fire hook if it exists
+    if (address(onKeyTransferHook) != address(0)) {
+      onKeyTransferHook.onKeyTransfer(
+        address(this),
+        _tokenId,
+        msg.sender, // operator
+        _from,
+        _recipient,
+        key.expirationTimestamp
+      );
+    }
   }
 
   /**
-  * @notice Transfers the ownership of an NFT from one address to another address
-  * @dev This works identically to the other function with an extra data parameter,
-  *  except this function just sets data to ''
-  * @param _from The current owner of the NFT
-  * @param _to The new owner
-  * @param _tokenId The NFT to transfer
-  */
-  function safeTransferFrom(
-    address _from,
-    address _to,
-    uint _tokenId
-  )
-    public
-  {
-    safeTransferFrom(_from, _to, _tokenId, '');
+   * @notice Transfers the ownership of an NFT from one address to another address
+   * @dev This works identically to the other function with an extra data parameter,
+   *  except this function just sets data to ''
+   * @param _from The current owner of the NFT
+   * @param _to The new owner
+   * @param _tokenId The NFT to transfer
+   */
+  function safeTransferFrom(address _from, address _to, uint _tokenId) public {
+    safeTransferFrom(_from, _to, _tokenId, "");
   }
 
   /**
-  * @notice Transfers the ownership of an NFT from one address to another address.
-  * When transfer is complete, this functions
-  *  checks if `_to` is a smart contract (code size > 0). If so, it calls
-  *  `onERC721Received` on `_to` and throws if the return value is not
-  *  `bytes4(keccak256('onERC721Received(address,address,uint,bytes)'))`.
-  * @param _from The current owner of the NFT
-  * @param _to The new owner
-  * @param _tokenId The NFT to transfer
-  * @param _data Additional data with no specified format, sent in call to `_to`
-  */
+   * @notice Transfers the ownership of an NFT from one address to another address.
+   * When transfer is complete, this functions
+   *  checks if `_to` is a smart contract (code size > 0). If so, it calls
+   *  `onERC721Received` on `_to` and throws if the return value is not
+   *  `bytes4(keccak256('onERC721Received(address,address,uint,bytes)'))`.
+   * @param _from The current owner of the NFT
+   * @param _to The new owner
+   * @param _tokenId The NFT to transfer
+   * @param _data Additional data with no specified format, sent in call to `_to`
+   */
   function safeTransferFrom(
     address _from,
     address _to,
     uint _tokenId,
     bytes memory _data
-  )
-    public
-    onlyIfAlive
-    onlyKeyOwnerOrApproved(_tokenId)
-    hasValidKey(_ownerOf[_tokenId])
-  {
+  ) public {
     transferFrom(_from, _to, _tokenId);
-    require(_checkOnERC721Received(_from, _to, _tokenId, _data), 'NON_COMPLIANT_ERC721_RECEIVER');
-
+    if (!_checkOnERC721Received(_from, _to, _tokenId, _data)) {
+      revert NON_COMPLIANT_ERC721_RECEIVER();
+    }
   }
 
   /**
    * Allow the Lock owner to change the transfer fee.
    */
-  function updateTransferFee(
-    uint _transferFeeBasisPoints
-  )
-    external
-    onlyOwner
-  {
-    emit TransferFeeChanged(
-      _transferFeeBasisPoints
-    );
+  function updateTransferFee(uint _transferFeeBasisPoints) external {
+    _onlyLockManager();
+    emit TransferFeeChanged(_transferFeeBasisPoints);
     transferFeeBasisPoints = _transferFeeBasisPoints;
   }
 
   /**
-   * Determines how much of a fee a key owner would need to pay in order to
-   * transfer the key to another account.  This is pro-rated so the fee goes down
-   * overtime.
-   * @param _owner The owner of the key check the transfer fee for.
+   * Determines how much of a fee would need to be paid in order to
+   * transfer to another account.  This is pro-rated so the fee goes
+   * down overtime.
+   * @dev Throws if _tokenId is not have a valid key
+   * @param _tokenId The id of the key check the transfer fee for.
+   * @param _time The amount of time to calculate the fee for.
+   * @return The transfer fee in seconds.
    */
   function getTransferFee(
-    address _owner,
-    uint _time
-  )
-    public view
-    hasValidKey(_owner)
-    returns (uint)
-  {
-    Key storage key = keyByOwner[_owner];
-    uint timeToTransfer;
-    uint fee;
-    // Math: safeSub is not required since `hasValidKey` confirms timeToTransfer is positive
-    // this is for standard key transfers
-    if(_time == 0) {
-      timeToTransfer = key.expirationTimestamp - block.timestamp;
-    } else {
-      timeToTransfer = _time;
-    }
-    fee = timeToTransfer.mul(transferFeeBasisPoints) / BASIS_POINTS_DEN;
-    return fee;
-  }
-
-  /**
-  * @notice Modify the expirationTimestamp of a key
-  * by a given amount.
-  * @param _tokenId The ID of the key to modify.
-  * @param _deltaT The amount of time in seconds by which
-  * to modify the keys expirationTimestamp
-  * @param _addTime Choose whether to increase or decrease
-  * expirationTimestamp (false == decrease, true == increase)
-  * @dev Throws if owner does not have a valid key.
-  */
-  function _timeMachine(
     uint _tokenId,
-    uint256 _deltaT,
-    bool _addTime
-  ) internal
-  {
-    address tokenOwner = _ownerOf[_tokenId];
-    require(tokenOwner != address(0), 'NON_EXISTENT_KEY');
-    Key storage key = keyByOwner[tokenOwner];
-    uint formerTimestamp = key.expirationTimestamp;
-    bool validKey = getHasValidKey(tokenOwner);
-    if(_addTime) {
-      if(validKey) {
-        key.expirationTimestamp = formerTimestamp.add(_deltaT);
-      } else {
-        key.expirationTimestamp = block.timestamp.add(_deltaT);
-      }
+    uint _time
+  ) public view returns (uint) {
+    _isKey(_tokenId);
+    uint expirationTimestamp = keyExpirationTimestampFor(_tokenId);
+    if (expirationTimestamp < block.timestamp) {
+      return 0;
     } else {
-      key.expirationTimestamp = formerTimestamp.sub(_deltaT);
+      uint timeToTransfer;
+      if (_time == 0) {
+        timeToTransfer = expirationTimestamp - block.timestamp;
+      } else {
+        timeToTransfer = _time;
+      }
+      return (timeToTransfer * transferFeeBasisPoints) / BASIS_POINTS_DEN;
     }
-    emit TimestampChanged(_tokenId, _deltaT, _addTime);
   }
 
   /**
@@ -301,16 +337,18 @@ contract MixinTransfer is
     address to,
     uint256 tokenId,
     bytes memory _data
-  )
-    internal
-    returns (bool)
-  {
+  ) internal returns (bool) {
     if (!to.isContract()) {
       return true;
     }
-    bytes4 retval = IERC721Receiver(to).onERC721Received(
-      msg.sender, from, tokenId, _data);
+    bytes4 retval = IERC721ReceiverUpgradeable(to).onERC721Received(
+      msg.sender,
+      from,
+      tokenId,
+      _data
+    );
     return (retval == _ERC721_RECEIVED);
   }
 
+  uint256[1000] private __safe_upgrade_gap;
 }

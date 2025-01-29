@@ -1,90 +1,116 @@
-const Units = require('ethereumjs-units')
-const Web3Utils = require('web3-utils')
-const BigNumber = require('bignumber.js')
+const assert = require('assert')
+const { ethers } = require('hardhat')
+const { getEvent, getEvents } = require('@unlock-protocol/hardhat-helpers')
+const {
+  deployLock,
+  ADDRESS_ZERO,
+  compareBigNumbers,
+  increaseTimeTo,
+} = require('../../helpers')
 
-const deployLocks = require('../../helpers/deployLocks')
-const shouldFail = require('../../helpers/shouldFail')
-
-const unlockContract = artifacts.require('../Unlock.sol')
-const getProxy = require('../../helpers/proxy')
-
-let unlock, locks
-
-contract('Lock / erc721 / balanceOf', accounts => {
+describe('Lock / erc721 / balanceOf', () => {
+  let lock
+  let keyOwner, someAccount, accountWithoutKey, keyReceiver
   before(async () => {
-    unlock = await getProxy(unlockContract)
-    locks = await deployLocks(unlock, accounts[0])
-  })
-
-  it('should fail if the user address is 0', async () => {
-    await shouldFail(
-      locks['FIRST'].balanceOf.call(Web3Utils.padLeft(0, 40)),
-      'INVALID_ADDRESS'
-    )
+    ;[, keyOwner, someAccount, accountWithoutKey, keyReceiver] =
+      await ethers.getSigners()
+    lock = await deployLock()
   })
 
   it('should return 0 if the user has no key', async () => {
-    const balance = new BigNumber(
-      await locks['FIRST'].balanceOf.call(accounts[3])
-    )
-    assert.equal(balance.toFixed(), 0)
+    const balance = await lock.balanceOf(await accountWithoutKey.getAddress())
+    compareBigNumbers(balance, 0)
   })
 
-  it('should return 1 if the user has a non expired key', async () => {
-    await locks['FIRST'].purchase(
-      0,
-      accounts[1],
-      web3.utils.padLeft(0, 40),
+  it('should return correct number of keys', async () => {
+    await lock.purchase(
       [],
+      [
+        await someAccount.getAddress(),
+        await someAccount.getAddress(),
+        await someAccount.getAddress(),
+      ],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      ['0x', '0x', '0x'],
       {
-        value: Units.convert('0.01', 'eth', 'wei'),
-        from: accounts[1],
+        value: ethers.parseUnits('0.03', 'ether'),
       }
     )
-    const balance = new BigNumber(
-      await locks['FIRST'].balanceOf.call(accounts[1])
-    )
-    assert.equal(balance.toFixed(), 1)
+    compareBigNumbers(await lock.balanceOf(await someAccount.getAddress()), 3)
   })
 
-  it('should return 0 if the user has an expired key', async () => {
-    await locks['FIRST'].purchase(
-      0,
-      accounts[5],
-      web3.utils.padLeft(0, 40),
+  it('should count only valid keys', async () => {
+    const tx = await lock.purchase(
       [],
+      [
+        await keyOwner.getAddress(),
+        await keyOwner.getAddress(),
+        await keyOwner.getAddress(),
+      ],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      ['0x', '0x', '0x'],
       {
-        value: Units.convert('0.01', 'eth', 'wei'),
-        from: accounts[5],
+        value: ethers.parseUnits('0.03', 'ether'),
       }
     )
-    await locks['FIRST'].expireKeyFor(accounts[5], {
-      from: accounts[0],
+    const receipt = await tx.wait()
+    const { events } = await getEvents(receipt, 'Transfer')
+    const tokenIds = events.map(({ args }) => args.tokenId)
+
+    compareBigNumbers(await lock.balanceOf(await keyOwner.getAddress()), 3)
+
+    // expire all keys
+    const expirationTs = await lock.keyExpirationTimestampFor(tokenIds[0])
+    await increaseTimeTo(expirationTs + 10n)
+
+    compareBigNumbers(await lock.balanceOf(await keyOwner.getAddress()), 0)
+
+    // renew one
+    await lock.extend(0, tokenIds[0], ADDRESS_ZERO, '0x', {
+      value: ethers.parseUnits('0.03', 'ether'),
     })
-    const balance = new BigNumber(
-      await locks['FIRST'].balanceOf.call(accounts[5])
-    )
-    assert.equal(balance.toFixed(), 0)
+
+    compareBigNumbers(await lock.balanceOf(await keyOwner.getAddress()), 1)
   })
 
-  it('should return 0 after a user transfers their key', async () => {
-    await locks['FIRST'].purchase(
-      0,
-      accounts[6],
-      web3.utils.padLeft(0, 40),
+  it('should return correct number after key transfers', async () => {
+    const tx = await lock.purchase(
       [],
+      [
+        await keyReceiver.getAddress(),
+        await keyReceiver.getAddress(),
+        await keyReceiver.getAddress(),
+      ],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      [ADDRESS_ZERO, ADDRESS_ZERO, ADDRESS_ZERO],
+      ['0x', '0x', '0x'],
       {
-        value: Units.convert('0.01', 'eth', 'wei'),
-        from: accounts[6],
+        value: ethers.parseUnits('0.03', 'ether'),
       }
     )
-    let ID = await locks['FIRST'].getTokenIdFor.call(accounts[6])
-    await locks['FIRST'].transferFrom(accounts[6], accounts[5], ID, {
-      from: accounts[6],
-    })
-    let balanceOf6 = await locks['FIRST'].balanceOf.call(accounts[6])
-    let balanceOf5 = await locks['FIRST'].balanceOf.call(accounts[5])
-    assert.equal(balanceOf6, 0)
-    assert.equal(balanceOf5, 1)
+    const receipt = await tx.wait()
+
+    const {
+      args: { tokenId },
+    } = await getEvent(receipt, 'Transfer')
+
+    compareBigNumbers(await lock.balanceOf(await keyReceiver.getAddress()), 3)
+    compareBigNumbers(
+      tokenId,
+      await lock.tokenOfOwnerByIndex(await keyReceiver.getAddress(), 0)
+    )
+    assert.equal(await keyReceiver.getAddress(), await lock.ownerOf(tokenId))
+
+    await lock
+      .connect(keyReceiver)
+      .transferFrom(
+        await keyReceiver.getAddress(),
+        await accountWithoutKey.getAddress(),
+        tokenId
+      )
+    assert.equal(await lock.balanceOf(await keyReceiver.getAddress()), 2)
+    assert.equal(await lock.balanceOf(await accountWithoutKey.getAddress()), 1)
   })
 })

@@ -1,47 +1,80 @@
-pragma solidity 0.5.14;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts-ethereum-package/contracts/token/ERC721/IERC721Enumerable.sol';
-import '@openzeppelin/contracts-ethereum-package/contracts/ownership/Ownable.sol';
-import './MixinDisableAndDestroy.sol';
-import '../interfaces/IUnlock.sol';
-import './MixinFunds.sol';
-
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "./MixinDisable.sol";
+import "./MixinRoles.sol";
+import "./MixinErrors.sol";
+import "../interfaces/IUnlock.sol";
+import "./MixinFunds.sol";
+import "../interfaces/hooks/ILockKeyCancelHook.sol";
+import "../interfaces/hooks/ILockKeyPurchaseHook.sol";
+import "../interfaces/hooks/ILockValidKeyHook.sol";
+import "../interfaces/hooks/ILockKeyGrantHook.sol";
+import "../interfaces/hooks/ILockTokenURIHook.sol";
+import "../interfaces/hooks/ILockKeyTransferHook.sol";
+import "../interfaces/hooks/ILockKeyExtendHook.sol";
+import "../interfaces/hooks/ILockHasRoleHook.sol";
 
 /**
  * @title Mixin for core lock data and functions.
- * @author HardlyDifficult
  * @dev `Mixins` are a design pattern seen in the 0x contracts.  It simply
  * separates logically groupings of code to ease readability.
  */
-contract MixinLockCore is
-  IERC721Enumerable,
-  Ownable,
-  MixinFunds,
-  MixinDisableAndDestroy
-{
-  event PriceChanged(
-    uint oldKeyPrice,
-    uint keyPrice
-  );
+contract MixinLockCore is MixinRoles, MixinFunds, MixinDisable {
+  using AddressUpgradeable for address;
 
   event Withdrawal(
     address indexed sender,
     address indexed tokenAddress,
-    address indexed beneficiary,
+    address indexed recipient,
     uint amount
   );
 
+  event PricingChanged(
+    uint oldKeyPrice,
+    uint keyPrice,
+    address oldTokenAddress,
+    address tokenAddress
+  );
+
+  /**
+   * @dev Emitted when `tokenId` token is transferred from `from` to `to`.
+   */
+  event Transfer(
+    address indexed from,
+    address indexed to,
+    uint256 indexed tokenId
+  );
+
+  /**
+   * @dev Emitted when `owner` enables `approved` to manage the `tokenId` token.
+   */
+  event Approval(
+    address indexed owner,
+    address indexed approved,
+    uint256 indexed tokenId
+  );
+
+  event EventHooksUpdated(
+    address onKeyPurchaseHook,
+    address onKeyCancelHook,
+    address onValidKeyHook,
+    address onTokenURIHook,
+    address onKeyTransferHook,
+    address onKeyExtendHook,
+    address onKeyGrantHook,
+    address onHasRoleHook
+  );
+
   // Unlock Protocol address
-  // TODO: should we make that private/internal?
   IUnlock public unlockProtocol;
 
   // Duration in seconds for which the keys are valid, after creation
   // should we take a smaller type use less gas?
-  // TODO: add support for a timestamp instead of duration
   uint public expirationDuration;
 
   // price in wei of the next key
-  // TODO: allow support for a keyPriceCalculator which could set prices dynamically
   uint public keyPrice;
 
   // Max number of keys sold if the keyReleaseMechanism is public
@@ -50,116 +83,175 @@ contract MixinLockCore is
   // A count of how many new key purchases there have been
   uint internal _totalSupply;
 
-  // The account which will receive funds on withdrawal
-  address public beneficiary;
+  // DEPREC: this is not used anymore (kept as private var for storage layout compat)
+  address payable private beneficiary;
 
   // The denominator component for values specified in basis points.
-  uint public constant BASIS_POINTS_DEN = 10000;
+  uint internal constant BASIS_POINTS_DEN = 10000;
 
-  // Ensure that the Lock has not sold all of its keys.
-  modifier notSoldOut() {
-    require(maxNumberOfKeys > _totalSupply, 'LOCK_SOLD_OUT');
-    _;
-  }
+  // lock hooks
+  ILockKeyPurchaseHook public onKeyPurchaseHook;
+  ILockKeyCancelHook public onKeyCancelHook;
+  ILockValidKeyHook public onValidKeyHook;
+  ILockTokenURIHook public onTokenURIHook;
 
-  modifier onlyOwnerOrBeneficiary()
-  {
-    require(
-      msg.sender == owner() || msg.sender == beneficiary,
-      'ONLY_LOCK_OWNER_OR_BENEFICIARY'
-    );
-    _;
+  // use to check data version (added to v10)
+  uint internal schemaVersion;
+
+  // keep track of how many key a single address can use (added to v10)
+  uint internal _maxKeysPerAddress;
+
+  // one more hook (added to v11)
+  ILockKeyTransferHook public onKeyTransferHook;
+
+  // two more hooks (added to v12)
+  ILockKeyExtendHook public onKeyExtendHook;
+  ILockKeyGrantHook public onKeyGrantHook;
+
+  // modifier to check if data has been upgraded
+  function _lockIsUpToDate() internal view {
+    if (schemaVersion != publicLockVersion()) {
+      revert MIGRATION_REQUIRED();
+    }
   }
 
   function _initializeMixinLockCore(
-    address _beneficiary,
+    address payable,
     uint _expirationDuration,
     uint _keyPrice,
     uint _maxNumberOfKeys
-  ) internal
-  {
-    require(_expirationDuration <= 100 * 365 * 24 * 60 * 60, 'MAX_EXPIRATION_100_YEARS');
+  ) internal {
     unlockProtocol = IUnlock(msg.sender); // Make sure we link back to Unlock's smart contract.
-    beneficiary = _beneficiary;
     expirationDuration = _expirationDuration;
     keyPrice = _keyPrice;
     maxNumberOfKeys = _maxNumberOfKeys;
+
+    // update only when initialized
+    schemaVersion = publicLockVersion();
+
+    // only a single key per address is allowed by default
+    _maxKeysPerAddress = 1;
   }
 
   // The version number of the current implementation on this network
-  function publicLockVersion(
-  ) public pure
-    returns (uint)
-  {
-    return 6;
+  function publicLockVersion() public pure returns (uint16) {
+    return 15;
   }
 
   /**
-   * @dev Called by owner to withdraw all funds from the lock and send them to the `beneficiary`.
-   * @param _tokenAddress specifies the token address to withdraw or 0 for ETH. This is usually
-   * the same as `tokenAddress` in MixinFunds.
+   * @dev Called by owner to withdraw all ETH funds from the lock
+   * @param _recipient specifies the address to send ETH to.
    * @param _amount specifies the max amount to withdraw, which may be reduced when
    * considering the available balance. Set to 0 or MAX_UINT to withdraw everything.
-   *
-   * TODO: consider allowing anybody to trigger this as long as it goes to owner anyway?
-   *  -- however be wary of draining funds as it breaks the `cancelAndRefund` and `fullRefund`
-   * use cases.
    */
   function withdraw(
     address _tokenAddress,
+    address payable _recipient,
     uint _amount
-  ) external
-    onlyOwnerOrBeneficiary
-  {
-    uint balance = getBalance(_tokenAddress, address(this));
-    uint amount;
-    if(_amount == 0 || _amount > balance)
-    {
-      require(balance > 0, 'NOT_ENOUGH_FUNDS');
-      amount = balance;
+  ) external {
+    _onlyLockManager();
+
+    // get balance
+    uint balance;
+    if (_tokenAddress == address(0)) {
+      balance = address(this).balance;
+    } else {
+      balance = IERC20Upgradeable(_tokenAddress).balanceOf(address(this));
     }
-    else
-    {
+
+    uint amount;
+    if (_amount == 0 || _amount > balance) {
+      if (balance <= 0) {
+        revert NOT_ENOUGH_FUNDS();
+      }
+      amount = balance;
+    } else {
       amount = _amount;
     }
 
-    emit Withdrawal(msg.sender, _tokenAddress, beneficiary, amount);
+    emit Withdrawal(msg.sender, _tokenAddress, _recipient, amount);
     // Security: re-entrancy not a risk as this is the last line of an external function
-    _transfer(_tokenAddress, beneficiary, amount);
+    _transfer(_tokenAddress, _recipient, amount);
   }
 
   /**
-   * A function which lets the owner of the lock to change the price for future purchases.
+   * A function which lets the owner of the lock change the pricing for future purchases.
+   * This consists of 2 parts: The token address and the price in the given token.
+   * In order to set the token to ETH, use 0 for the token Address.
    */
-  function updateKeyPrice(
-    uint _keyPrice
-  )
-    external
-    onlyOwner
-    onlyIfAlive
-  {
+  function updateKeyPricing(uint _keyPrice, address _tokenAddress) external {
+    _onlyLockManager();
+    _isValidToken(_tokenAddress);
     uint oldKeyPrice = keyPrice;
+    address oldTokenAddress = tokenAddress;
     keyPrice = _keyPrice;
-    emit PriceChanged(oldKeyPrice, keyPrice);
+    tokenAddress = _tokenAddress;
+    emit PricingChanged(oldKeyPrice, keyPrice, oldTokenAddress, tokenAddress);
+  }
+
+  function _isValidHook(address hookAddress, uint8 index) private view {
+    if (hookAddress != address(0) && !hookAddress.isContract()) {
+      revert INVALID_HOOK(index);
+    }
   }
 
   /**
-   * A function which lets the owner of the lock update the beneficiary account,
-   * which receives funds on withdrawal.
+   * @notice Allows a lock manager to add or remove an event hook
    */
-  function updateBeneficiary(
-    address _beneficiary
-  ) external
-    onlyOwnerOrBeneficiary
-  {
-    require(_beneficiary != address(0), 'INVALID_ADDRESS');
-    beneficiary = _beneficiary;
+  function setEventHooks(
+    address _onKeyPurchaseHook,
+    address _onKeyCancelHook,
+    address _onValidKeyHook,
+    address _onTokenURIHook,
+    address _onKeyTransferHook,
+    address _onKeyExtendHook,
+    address _onKeyGrantHook,
+    address _onHasRoleHook
+  ) external {
+    _onlyLockManager();
+
+    // validate hooks
+    _isValidHook(_onKeyPurchaseHook, 0);
+    _isValidHook(_onKeyCancelHook, 1);
+    _isValidHook(_onValidKeyHook, 2);
+    _isValidHook(_onTokenURIHook, 3);
+    _isValidHook(_onKeyTransferHook, 4);
+    _isValidHook(_onKeyExtendHook, 5);
+    _isValidHook(_onKeyGrantHook, 6);
+    _isValidHook(_onHasRoleHook, 7);
+
+    onKeyPurchaseHook = ILockKeyPurchaseHook(_onKeyPurchaseHook);
+    onKeyCancelHook = ILockKeyCancelHook(_onKeyCancelHook);
+    onTokenURIHook = ILockTokenURIHook(_onTokenURIHook);
+    onValidKeyHook = ILockValidKeyHook(_onValidKeyHook);
+    onKeyTransferHook = ILockKeyTransferHook(_onKeyTransferHook);
+    onKeyExtendHook = ILockKeyExtendHook(_onKeyExtendHook);
+    onKeyGrantHook = ILockKeyGrantHook(_onKeyGrantHook);
+    onHasRoleHook = ILockHasRoleHook(_onHasRoleHook);
+
+    emit EventHooksUpdated(
+      _onKeyPurchaseHook,
+      _onKeyCancelHook,
+      _onValidKeyHook,
+      _onTokenURIHook,
+      _onKeyTransferHook,
+      _onKeyExtendHook,
+      _onKeyGrantHook,
+      _onHasRoleHook
+    );
   }
 
-  function totalSupply()
-    public
-    view returns(uint256)
-  {
+  /**
+   * Returns the total number of keys, including non-valid ones
+   * @return _totalKeysCreated the total number of keys, valid or not
+   */
+  function totalSupply() public view returns (uint256 _totalKeysCreated) {
     return _totalSupply;
   }
+
+  // decreased from 1000 to 998 when adding `schemaVersion` and `maxKeysPerAddress` in v10
+  // decreased from 998 to 997 when adding `onKeyTransferHook` in v11
+  // decreased from 997 to 996 when adding `onKeyExtendHook` in v12
+  // decreased from 996 to 995 when adding `onKeyGrantHook` in v12
+  uint256[995] private __safe_upgrade_gap;
 }

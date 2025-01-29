@@ -1,0 +1,67 @@
+---
+sidebar_position: 1
+title: Subgraph
+description: >-
+  Querying smart contracts directly from your application is always an option,
+  but, when your application needs to retrieve large collections or multiple
+  elements from a contract, use a subgraph!
+---
+
+import { networks } from '@unlock-protocol/networks'
+
+# Unlock Subgraph Introduction
+
+Unlock Labs leverages the [Graph Protocol](https://thegraph.com) to simplify the process of building rich applications that leverage the Unlock Smart Contracts and associated data.
+
+The Unlock Labs team has deployed subgraphs for each of the Unlock Protocol networks. These subgraphs index and organize data from the Unlock smart contracts, making it easy to query and retrieve data from the Unlock Protocol.
+
+### Endpoints
+
+The Unlock Labs hosts a Subgraph service similar to our [RPC provider](../rpc-provider.md) at the address `https://subgraph.unlock-protocol.com/<chainId>`. Please use that for development purposes only. For production, you should use any of the subgraphs deployed on the Graph Protocol's decentralized network.
+
+[The Graph Explorer](https://thegraph.com/explorer?search=Unlock%252BProtocol) includes additional tools, such as a Playground to build and debug your own GraphQL queries.
+
+#### Production Networks
+
+<ul>
+  {Object.keys(networks).map((network) => {
+    const name = networks[network].name
+    if (name !== 'localhost' && !networks[network].isTestNetwork) {
+      const subgraph = networks[network].subgraph
+      return (
+        <li>
+          <a
+            href={`https://thegraph.com/explorer/subgraphs/${subgraph.graphId}?view=Query`}
+          >
+            {name}
+          </a>
+        </li>
+      )
+    }
+  })}
+</ul>
+
+#### Test Networks
+
+<ul>
+  {Object.keys(networks).map((network) => {
+    const name = networks[network].name
+    if (name !== 'localhost' && networks[network].isTestNetwork) {
+      const subgraph = networks[network].subgraph
+      return (
+        <li>
+          <a
+            href={`https://thegraph.com/explorer/subgraphs/${subgraph.graphId}?view=Query`}
+          >
+            {name}
+          </a>
+        </li>
+      )
+    }
+  })}
+</ul>
+
+## Helpful The Graph Resources
+
+- [Querying from an application](https://thegraph.com/docs/en/developer/querying-from-your-app/)
+- [How to use the explorer and playground to query on-chain data](https://medium.com/@chidubem_/how-to-query-on-chain-data-with-the-graph-f8507488215)
